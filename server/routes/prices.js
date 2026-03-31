@@ -38,9 +38,9 @@ router.get('/bnd-funds', async (req, res) => {
   }
 });
 
-// ── Bulk refresh — must be before /:id ───────────────────────────────────────
+// ── Bulk refresh logic (also called by scheduler) ────────────────────────────
 
-router.post('/refresh', async (req, res) => {
+async function runPriceRefresh() {
   const assets = db.prepare(`
     SELECT id, name, ticker, price_source FROM assets
     WHERE archived = 0
@@ -62,7 +62,14 @@ router.post('/refresh', async (req, res) => {
     }
   }
 
-  res.json({ fetched, skipped, errors });
+  return { fetched, skipped, errors };
+}
+
+// ── Bulk refresh endpoint — must be before /:id ───────────────────────────────
+
+router.post('/refresh', async (req, res) => {
+  const result = await runPriceRefresh();
+  res.json(result);
 });
 
 // ── Single asset refresh — must be before /:id ───────────────────────────────
@@ -113,3 +120,4 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.runPriceRefresh = runPriceRefresh;
