@@ -1,0 +1,13 @@
+services:
+  portfolio:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - portfolio-data:/data
+    environment:
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  portfolio-data:

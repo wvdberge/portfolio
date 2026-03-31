@@ -108,34 +108,132 @@ npm run dev
 
 Open [http://localhost:5174](http://localhost:5174).
 
-### Build for production
+### Build for production (without Docker)
 
 ```bash
 cd client
 npm run build
-# Copy dist/ output to server/public/
 cp -r dist/* ../server/public/
 ```
 
-Then run `node server/index.js` — the Express server serves both the API and the React app.
-
-### Database location
-
-SQLite database is stored at `../../data/wealth.db` relative to the `server/` directory (i.e. two levels up from the repo root). Override with the `DB_PATH` environment variable.
-
-```bash
-DB_PATH=/your/path/wealth.db node index.js
-```
+Then `node server/index.js` — Express serves both the API and the React app.
 
 ### Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
 | `ALPHA_VANTAGE_API_KEY` | Optional | Enables Alpha Vantage price fetching. Free tier: 25 requests/day. |
-| `DB_PATH` | Optional | Override the default SQLite file path. |
+| `DB_PATH` | Optional | SQLite file path (default: `/data/wealth.db` in Docker, `../../data/wealth.db` otherwise). |
 | `PORT` | Optional | HTTP port (default: 3001). |
 
 Price fetching is always **user-initiated** — no background polling — to stay within the free tier limit.
+
+---
+
+## Docker / NAS Deployment
+
+The app ships as a single container. The React client is compiled during the image build and served by the Express server — no separate web server needed.
+
+### Quick start
+
+```bash
+cp .env.example .env
+# Edit .env and add your ALPHA_VANTAGE_API_KEY if you have one
+
+docker compose up -d
+```
+
+Open [http://your-nas-ip:3001](http://your-nas-ip:3001).
+
+The SQLite database is stored in a named Docker volume (`portfolio-data`) so it survives container restarts and upgrades.
+
+### NAS setup (Synology / QNAP / similar)
+
+1. **Copy files to your NAS.** Either `git clone` directly on the NAS or copy just the three files you need:
+   - `Dockerfile`
+   - `docker-compose.yml`
+   - `.env.example` → rename to `.env`
+
+   > If your NAS can't run `git clone`, you can also `docker build` on your Mac and push the image to a registry (Docker Hub, GHCR) and pull it on the NAS — see *Pre-built image* below.
+
+2. **Edit `.env`** on the NAS and set `ALPHA_VANTAGE_API_KEY` if desired.
+
+3. **Start the container:**
+   ```bash
+   docker compose up -d
+   ```
+
+4. **Verify it's running:**
+   ```bash
+   docker compose logs -f
+   # Should print: Portfolio server running on port 3001
+   ```
+
+### Updating to a new version
+
+```bash
+git pull                   # get the latest code
+docker compose build       # rebuild the image
+docker compose up -d       # restart with the new image
+```
+
+The database volume is untouched during updates.
+
+### Backing up the database
+
+```bash
+# Find the volume mount path
+docker volume inspect portfolio_portfolio-data
+
+# Or copy the db file out directly
+docker compose cp portfolio:/data/wealth.db ./wealth-backup-$(date +%Y%m%d).db
+```
+
+### Pre-built image (optional)
+
+If you'd rather not build on the NAS, build and push from your Mac:
+
+```bash
+# Replace with your Docker Hub username
+docker build -t yourname/portfolio:latest .
+docker push yourname/portfolio:latest
+```
+
+Then on the NAS, change `docker-compose.yml` to use `image:` instead of `build:`:
+
+```yaml
+services:
+  portfolio:
+    image: yourname/portfolio:latest   # ← replace build: . with this
+    ports:
+      - "3001:3001"
+    volumes:
+      - portfolio-data:/data
+    environment:
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-}
+    restart: unless-stopped
+```
+
+### Expose on a custom port
+
+Change the left side of the port mapping in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "8080:3001"   # access at :8080 instead of :3001
+```
+
+### Run behind a reverse proxy (nginx / Traefik)
+
+The app has no concept of a URL prefix — just proxy the root path to port 3001. Example nginx snippet:
+
+```nginx
+location / {
+    proxy_pass http://localhost:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
 
 ---
 
