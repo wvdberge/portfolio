@@ -356,8 +356,8 @@ router.post('/commit', (req, res) => {
         row.amount, row.fee ?? null, row.notes ?? null
       );
 
-      // Backfill price from transaction if available
-      if (row.price_per_unit != null && !isNaN(row.price_per_unit)) {
+      // Backfill price from transaction if available (skip CA rows — Koers is dividend/unit, not NAV)
+      if (row.price_per_unit != null && !isNaN(row.price_per_unit) && row.notes !== 'CA (dividend reinvestment)') {
         db.prepare(`
           INSERT INTO asset_prices (asset_id, date, price) VALUES (?, ?, ?)
           ON CONFLICT(asset_id, date) DO NOTHING
