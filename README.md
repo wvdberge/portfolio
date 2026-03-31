@@ -206,6 +206,26 @@ The current price fetchers only retrieve today's latest NAV. There is no way to 
 - **Meesman** — they offer an Excel download of historical NAV data; parsing this is not yet implemented
 - **Brand New Day** — the same fund rates API endpoint likely supports date ranges but this has not been explored
 
+### Automatic Dutch CPI fetching (CBS API)
+
+CPI data is currently entered manually in the Data Entry screen. The Dutch national statistics bureau (CBS) publishes CPI data through an open OData API — no key required:
+
+```
+https://opendata.cbs.nl/ODataApi/odata/83131NED/UntypedDataSet
+```
+
+A sync route (`POST /api/cpi/sync`) should fetch the latest monthly CPI figures and upsert them into `cpi_data`. The relevant series is the general consumer price index (`CPI Alle huishoudens`) at monthly frequency. A button in the Data Entry screen should trigger this, replacing the need to look up and enter values manually.
+
+### Automatic MSCI World index price fetching
+
+Benchmark prices are also entered manually. Possible free data sources to explore:
+
+- **Yahoo Finance** — `https://query1.finance.yahoo.com/v8/finance/chart/URTH` (ETF tracking MSCI World, daily OHLC, no key required but undocumented)
+- **stooq.com** — CSV download endpoint, no key required
+- **Alpha Vantage** — already integrated; the `IWDA.LON` or `URTH` ticker could serve as a proxy
+
+A sync route (`POST /api/benchmark/sync`) with a button in the Data Entry screen would keep the benchmark series up to date automatically, similar to the CPI sync above.
+
 ### Per-asset real return in yearly summary
 
 The per-asset rows in the yearly summary always show `—` for real return %. Only the portfolio-level rows compute a real return (nominal XIRR minus annualized CPI). Per-asset real return is straightforward to add once the portfolio-level approach is validated.
