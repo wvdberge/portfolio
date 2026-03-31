@@ -355,6 +355,15 @@ router.post('/commit', (req, res) => {
         row.quantity ?? null, row.price_per_unit ?? null,
         row.amount, row.fee ?? null, row.notes ?? null
       );
+
+      // Backfill price from transaction if available
+      if (row.price_per_unit != null && !isNaN(row.price_per_unit)) {
+        db.prepare(`
+          INSERT INTO asset_prices (asset_id, date, price) VALUES (?, ?, ?)
+          ON CONFLICT(asset_id, date) DO NOTHING
+        `).run(row.asset_id, row.date, row.price_per_unit);
+      }
+
       imported++;
     } catch (err) {
       errors.push({ row, reason: err.message });
