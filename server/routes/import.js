@@ -8,48 +8,57 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
+// Parse Dutch number format: "3.000,00" → 3000.00
+function parseDutchNumber(raw) {
+  if (raw == null || raw === '') return NaN;
+  return parseFloat(String(raw).replace(/\./g, '').replace(',', '.'));
+}
+
 function parseAbnAmro(rows) {
   return rows.map((row, i) => {
     try {
-      // ABN AMRO brokerage export (Dutch headers, semicolon-delimited)
-      // Column names may vary; adjust to match actual export
       const dateRaw = row['Datum'] || row['Date'] || '';
-      const typeRaw = (row['Omschrijving'] || row['Type'] || '').trim();
+      const typeRaw = (row['Order type'] || row['Omschrijving'] || row['Type'] || '').trim();
       const name = (row['Naam fonds'] || row['Naam'] || row['Security'] || '').trim();
       const isin = (row['ISIN'] || '').trim();
-      const qtyRaw = row['Aantal'] || row['Quantity'] || '';
+      const qtyRaw = row['Aantal/Bedrag'] || row['Aantal'] || row['Quantity'] || '';
       const priceRaw = row['Koers'] || row['Price'] || '';
-      const currency = (row['Valuta'] || row['Currency'] || 'EUR').trim();
       const fxRateRaw = row['Koersratio'] || row['Exchange Rate'] || '1';
       const feeRaw = row['Provisie'] || row['Commission'] || row['Fee'] || '0';
-      // Use net amount column (last EUR-denominated amount)
-      const netAmountRaw = row['Transactiewaarde'] || row['Net Amount'] || row['Bedrag'] || '';
+      const netAmountRaw = row['Netto waarde'] || row['Transactiewaarde'] || row['Net Amount'] || row['Bedrag'] || '';
 
       if (!dateRaw || !typeRaw) return { status: 'error', error: 'Missing date or type', _raw: row };
 
-      // Parse date: dd-mm-yyyy or yyyy-mm-dd
+      // Parse date: d-m-yyyy, dd-mm-yyyy, or yyyy-mm-dd
       let date;
-      const dmyMatch = dateRaw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      const dmyMatch = dateRaw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
       if (dmyMatch) {
-        date = `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+        const d = dmyMatch[1].padStart(2, '0');
+        const m = dmyMatch[2].padStart(2, '0');
+        date = `${dmyMatch[3]}-${m}-${d}`;
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
         date = dateRaw;
       } else {
         return { status: 'error', error: `Unrecognised date format: ${dateRaw}`, _raw: row };
       }
 
-      const typeMap = { 'Koop': 'buy', 'Verkoop': 'sell', 'Dividend': 'dividend' };
+      const typeMap = {
+        'Aankoop': 'buy', 'Koop': 'buy',
+        'Verkoop': 'sell',
+        'Dividend': 'dividend',
+        'CA': 'buy',
+      };
       const type = typeMap[typeRaw];
       if (!type) return { status: 'error', error: `Unknown transaction type: ${typeRaw}`, _raw: row };
 
-      const fxRate = parseFloat(fxRateRaw.replace(',', '.')) || 1;
-      const quantity = qtyRaw ? parseFloat(qtyRaw.replace(',', '.')) : null;
-      const pricePerUnit = priceRaw ? parseFloat(priceRaw.replace(',', '.')) : null;
-      const fee = Math.abs(parseFloat(feeRaw.replace(',', '.')) || 0);
+      const fxRate = parseDutchNumber(fxRateRaw) || 1;
+      const quantity = qtyRaw ? parseDutchNumber(qtyRaw) : null;
+      const pricePerUnit = priceRaw ? parseDutchNumber(priceRaw) : null;
+      const fee = Math.abs(parseDutchNumber(feeRaw) || 0);
 
       let amount;
       if (netAmountRaw) {
-        amount = Math.abs(parseFloat(netAmountRaw.replace(',', '.').replace(/[^0-9.,-]/g, '')) / fxRate);
+        amount = Math.abs(parseDutchNumber(netAmountRaw) / fxRate);
       } else if (quantity && pricePerUnit) {
         amount = Math.abs(quantity * pricePerUnit / fxRate) + (type === 'buy' ? fee : -fee);
       } else {
@@ -58,7 +67,7 @@ function parseAbnAmro(rows) {
 
       if (isNaN(amount)) return { status: 'error', error: 'Invalid amount', _raw: row };
 
-      const notes = isin ? `ISIN: ${isin}` : null;
+      const notes = typeRaw === 'CA' ? 'CA (dividend reinvestment)' : (isin ? `ISIN: ${isin}` : null);
       const externalName = isin || name;
 
       return {
@@ -161,6 +170,7 @@ function detectFormat(filename, headers) {
   // Heuristics on headers
   const h = headers.map(s => s.toLowerCase());
   if (h.includes('account name') || h.includes('accountnaam')) return 'raisin';
+  if (h.includes('netto waarde') || h.includes('order type') || h.includes('aantal/bedrag')) return 'abn';
   if (h.includes('isin') && (h.includes('koop') || h.includes('omschrijving') || h.includes('naam fonds'))) return 'abn';
 
   return null;
