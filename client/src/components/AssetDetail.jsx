@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { fmtEur, fmtDate, fmtShares, fmtNum, today } from '../format.js';
+import PriceSourceFields from './PriceSourceFields.jsx';
 
 const ASSET_TYPES = ['stock', 'etf', 'savings', 'real_estate', 'pension', 'crypto', 'other'];
 const LIQUID_TYPES = ['stock', 'etf', 'crypto'];
@@ -14,6 +15,7 @@ function AssetModal({ asset, onClose, onSaved }) {
     type: asset.type,
     currency: asset.currency,
     target_allocation_pct: asset.target_allocation_pct ?? '',
+    price_source: asset.price_source ?? '',
     ticker: asset.ticker ?? '',
   });
   const [err, setErr] = useState('');
@@ -30,6 +32,7 @@ function AssetModal({ asset, onClose, onSaved }) {
         type: form.type,
         currency: form.currency.trim() || 'EUR',
         target_allocation_pct: form.target_allocation_pct !== '' ? Number(form.target_allocation_pct) : null,
+        price_source: form.price_source || null,
         ticker: form.ticker.trim() || null,
       });
       onSaved(); onClose();
@@ -57,18 +60,18 @@ function AssetModal({ asset, onClose, onSaved }) {
               <input value={form.currency} onChange={e => set('currency', e.target.value)} />
             </div>
           </div>
-          <div className="form-row-inline">
-            <div>
-              <label>Target allocation %</label>
-              <input type="number" step="0.01" min="0" max="100"
-                value={form.target_allocation_pct} onChange={e => set('target_allocation_pct', e.target.value)}
-                placeholder="optional" />
-            </div>
-            <div>
-              <label>Price ticker (Alpha Vantage symbol)</label>
-              <input value={form.ticker} onChange={e => set('ticker', e.target.value)} placeholder="e.g. LON:IWDA" />
-            </div>
+          <div className="form-row">
+            <label>Target allocation %</label>
+            <input type="number" step="0.01" min="0" max="100"
+              value={form.target_allocation_pct} onChange={e => set('target_allocation_pct', e.target.value)}
+              placeholder="optional" style={{ maxWidth: 180 }} />
           </div>
+          <PriceSourceFields
+            priceSource={form.price_source}
+            ticker={form.ticker}
+            assetId={asset.id}
+            onChange={(ps, tk) => setForm(f => ({ ...f, price_source: ps, ticker: tk }))}
+          />
           {err && <div className="error-msg">{err}</div>}
           <div className="modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
@@ -373,6 +376,8 @@ function PricesTab({ asset }) {
   const [prices, setPrices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState(null);
 
   function load() {
     setLoading(true);
@@ -386,11 +391,35 @@ function PricesTab({ asset }) {
     load();
   }
 
+  async function handleFetch() {
+    setFetching(true);
+    setFetchMsg(null);
+    try {
+      const result = await api.prices.refreshOne(asset.id);
+      setFetchMsg({ ok: true, msg: `Fetched: ${result.price} on ${result.date}` });
+      load();
+    } catch (err) {
+      setFetchMsg({ ok: false, msg: err.message });
+    } finally {
+      setFetching(false);
+    }
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        <span title={!asset.price_source ? 'Set a price source on this asset to enable auto-fetch' : ''}>
+          <button className="btn" onClick={handleFetch} disabled={fetching || !asset.price_source || !asset.ticker}>
+            {fetching ? 'Fetching…' : 'Fetch Latest Price'}
+          </button>
+        </span>
         <button className="btn btn-primary" onClick={() => setModal(true)}>+ Add Price</button>
       </div>
+      {fetchMsg && (
+        <div className={`banner banner-${fetchMsg.ok ? 'ok' : 'err'}`} style={{ marginBottom: 12 }}>
+          {fetchMsg.msg}
+        </div>
+      )}
       {loading ? <div className="loading">Loading…</div> : prices.length === 0 ? (
         <div className="empty-state">No prices yet.</div>
       ) : (

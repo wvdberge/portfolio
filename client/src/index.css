@@ -199,8 +199,41 @@ label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom
 .loading { text-align: center; color: var(--text-muted); padding: 24px; }
 .computed-field { background: var(--bg-elevated); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 6px 10px; font-size: 13px; color: var(--text); }
 
+/* ── Stat boxes (returns) ────────────────────────────────────────────────────*/
+.stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.stat-box {
+  flex: 1; min-width: 140px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px;
+}
+.stat-box-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.stat-box-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-box-value.muted { color: var(--text-muted); font-size: 18px; }
+.stat-box-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Colour helpers ──────────────────────────────────────────────────────────*/
+:root { --green: var(--positive); --red: var(--negative); }
+.pos { color: var(--positive); }
+.neg { color: var(--negative); }
+
+/* ── Banners ─────────────────────────────────────────────────────────────────*/
+.banner {
+  padding: 8px 14px; border-radius: var(--radius); font-size: 13px;
+  display: flex; align-items: center;
+}
+.banner-ok   { background: #1a3d28; color: var(--positive); border: 1px solid #2d6b40; }
+.banner-warn { background: #3a2a1a; color: var(--warn);     border: 1px solid #6b4d1a; }
+.banner-err  { background: #3a1c1c; color: var(--negative); border: 1px solid #6b2b2b; }
+
+/* ── Yearly Summary ──────────────────────────────────────────────────────────*/
+.data-table tr.summary-row td { border-top: 2px solid var(--border); font-weight: 600; background: var(--bg-elevated); }
+.data-table tr.subtotal-row td { background: var(--bg-elevated); font-size: 12px; }
+.row-error td { color: var(--negative); opacity: .7; }
+.row-muted td { opacity: .45; }
+
 @media (max-width: 640px) {
   .form-row-inline { grid-template-columns: 1fr; }
   .main { padding: 12px; }
   .net-worth-value { font-size: 28px; }
+  .stat-box { min-width: 120px; }
 }

@@ -18,6 +18,8 @@ app.use('/api/snapshots',           require('./routes/snapshots'));
 app.use('/api/liability-snapshots', require('./routes/liability-snapshots'));
 app.use('/api/benchmark',           require('./routes/benchmark'));
 app.use('/api/cpi',                 require('./routes/cpi'));
+app.use('/api/portfolio',           require('./routes/portfolio'));
+app.use('/api/import',              require('./routes/import'));
 
 // SPA fallback
 app.get('*', (req, res) => {

@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const { db, getBenchmarkReturn } = require('../db');
+
+// GET /api/benchmark/return?from=YYYY-MM-DD&to=YYYY-MM-DD — before /:id
+router.get('/return', (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+  res.json({ return: getBenchmarkReturn(from, to) });
+});
 
 // GET /api/benchmark
 router.get('/', (req, res) => {
