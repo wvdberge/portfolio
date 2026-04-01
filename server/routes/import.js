@@ -42,18 +42,20 @@ function parseAbnAmro(rows) {
         return { status: 'error', error: `Unrecognised date format: ${dateRaw}`, _raw: row };
       }
 
+      const isCA = typeRaw === 'CA';
       const typeMap = {
         'Aankoop': 'buy', 'Koop': 'buy',
         'Verkoop': 'sell',
         'Dividend': 'dividend',
-        'CA': 'buy',
+        'CA': 'dividend',
       };
       const type = typeMap[typeRaw];
       if (!type) return { status: 'error', error: `Unknown transaction type: ${typeRaw}`, _raw: row };
 
       const fxRate = parseDutchNumber(fxRateRaw) || 1;
-      const quantity = qtyRaw ? parseDutchNumber(qtyRaw) : null;
-      const pricePerUnit = priceRaw ? parseDutchNumber(priceRaw) : null;
+      // For CA rows, Koers = dividend/unit (not NAV) and Aantal = existing units held — skip both
+      const quantity = (!isCA && qtyRaw) ? parseDutchNumber(qtyRaw) : null;
+      const pricePerUnit = (!isCA && priceRaw) ? parseDutchNumber(priceRaw) : null;
       const fee = Math.abs(parseDutchNumber(feeRaw) || 0);
 
       let amount;
@@ -67,7 +69,7 @@ function parseAbnAmro(rows) {
 
       if (isNaN(amount)) return { status: 'error', error: 'Invalid amount', _raw: row };
 
-      const notes = typeRaw === 'CA' ? 'CA (dividend reinvestment)' : (isin ? `ISIN: ${isin}` : null);
+      const notes = isCA ? 'CA (dividend reinvestment) — add corresponding buy manually' : (isin ? `ISIN: ${isin}` : null);
       const externalName = isin || name;
 
       return {
@@ -77,6 +79,7 @@ function parseAbnAmro(rows) {
         asset_name: name,
         external_name: externalName,
         broker: 'abn',
+        isCA,
         quantity: quantity && !isNaN(quantity) ? quantity : null,
         price_per_unit: pricePerUnit && !isNaN(pricePerUnit) ? pricePerUnit / fxRate : null,
         amount,
@@ -279,7 +282,7 @@ router.post('/commit', (req, res) => {
   const { rows, mappings = {} } = req.body;
   if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows array required' });
 
-  let imported = 0, skipped = 0;
+  let imported = 0, skipped = 0, caCount = 0;
   const errors = [];
 
   // Save Raisin mappings & resolve asset_ids
@@ -364,13 +367,14 @@ router.post('/commit', (req, res) => {
         `).run(row.asset_id, row.date, row.price_per_unit);
       }
 
+      if (row.isCA) caCount++;
       imported++;
     } catch (err) {
       errors.push({ row, reason: err.message });
     }
   }
 
-  res.json({ imported, skipped, errors });
+  res.json({ imported, skipped, caCount, errors });
 });
 
 module.exports = router;

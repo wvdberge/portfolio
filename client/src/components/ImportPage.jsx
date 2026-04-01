@@ -252,6 +252,11 @@ function DoneStep({ result, onReset }) {
           <span style={{ color: 'var(--red)' }}>{result.errors.length} errors</span>
         )}
       </div>
+      {result.caCount > 0 && (
+        <div className="banner banner-warn" style={{ marginBottom: 12 }}>
+          {result.caCount} dividend reinvestment{result.caCount > 1 ? 's' : ''} (CA) imported as dividend — <strong>add the corresponding buy transaction{result.caCount > 1 ? 's' : ''} manually</strong> with the exact unit count from your account.
+        </div>
+      )}
       {result.errors.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <strong>Errors:</strong>
