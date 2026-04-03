@@ -5,10 +5,10 @@ import { fmtEur, fmtDate } from '../format.js';
 const FORMATS = [
   { value: '', label: 'Auto-detect' },
   { value: 'abn', label: 'ABN AMRO Brokerage' },
-  { value: 'raisin', label: 'Raisin' },
+  { value: 'abn_savings', label: 'ABN AMRO Savings Account (.TAB)' },
   { value: 'centraal_beheer', label: 'Centraal Beheer' },
   { value: 'meesman', label: 'Meesman' },
-  { value: 'brand_new_day', label: 'Brand New Day' },
+
 ];
 
 function StatusBadge({ status }) {
@@ -49,7 +49,7 @@ function UploadStep({ onParsed }) {
       <form onSubmit={handleParse}>
         <div className="form-row">
           <label>CSV file</label>
-          <input type="file" accept=".csv,.txt" onChange={e => setFile(e.target.files[0])} required />
+          <input type="file" accept=".csv,.txt,.tab,.TAB" onChange={e => setFile(e.target.files[0])} required />
         </div>
         <div className="form-row">
           <label>Format</label>
@@ -68,9 +68,9 @@ function UploadStep({ onParsed }) {
   );
 }
 
-// ── Raisin mapping step ───────────────────────────────────────────────────────
+// ── Account mapping step (ABN Savings) ───────────────────────────────────────
 
-function MappingStep({ accounts, existingMappings, onMapped, onBack }) {
+function MappingStep({ accounts, accountLabels, existingMappings, title, columnLabel, onMapped, onBack }) {
   const [assets, setAssets] = useState([]);
   const [mappings, setMappings] = useState(() => {
     const m = {};
@@ -104,19 +104,19 @@ function MappingStep({ accounts, existingMappings, onMapped, onBack }) {
 
   return (
     <div className="section">
-      <h2>Map Raisin Accounts to Assets</h2>
+      <h2>{title || 'Map Accounts to Assets'}</h2>
       <form onSubmit={submit}>
         <table className="data-table">
           <thead>
             <tr>
-              <th>Raisin Account Name</th>
+              <th>{columnLabel || 'Account'}</th>
               <th>Map to Asset</th>
             </tr>
           </thead>
           <tbody>
             {accounts.map(acc => (
               <tr key={acc}>
-                <td>{acc}</td>
+                <td>{accountLabels?.[acc] || acc}</td>
                 <td>
                   <select
                     value={mappings[acc] ?? ''}
@@ -127,7 +127,7 @@ function MappingStep({ accounts, existingMappings, onMapped, onBack }) {
                     {assets.map(a => (
                       <option key={a.id} value={a.id}>{a.name} ({a.type})</option>
                     ))}
-                    <option value={`new:${acc}`}>+ Create new asset "{acc}"</option>
+                    <option value={`new:${acc}`}>+ Create new asset "{accountLabels?.[acc] || acc}"</option>
                   </select>
                 </td>
               </tr>
@@ -284,7 +284,7 @@ export default function ImportPage() {
 
   function handleParsed(result) {
     setPreview(result);
-    if (result.format === 'raisin' && result.accounts && result.accounts.length > 0) {
+    if (result.format === 'abn_savings' && result.accounts?.length > 0) {
       setStep('mapping');
     } else {
       setStep('review');
@@ -313,17 +313,19 @@ export default function ImportPage() {
       <div className="page-header">
         <h1>Import Transactions</h1>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-          Supported: ABN AMRO, Raisin
-          {' · '}Stubs: Centraal Beheer, Meesman, Brand New Day
+          Supported: ABN AMRO Brokerage, ABN AMRO Savings (.TAB), Centraal Beheer, Meesman
         </div>
       </div>
 
       {step === 'upload' && <UploadStep onParsed={handleParsed} />}
 
-      {step === 'mapping' && preview?.format === 'raisin' && (
+      {step === 'mapping' && preview && (
         <MappingStep
           accounts={preview.accounts}
+          accountLabels={preview.accountLabels}
           existingMappings={preview.existingMappings}
+          title="Map ABN Funds & Account to Assets"
+          columnLabel="ABN Fund / Account"
           onMapped={handleMapped}
           onBack={reset}
         />
@@ -334,7 +336,7 @@ export default function ImportPage() {
           rows={preview?.rows ?? []}
           mappings={mappings}
           onBack={() => {
-            if (preview?.format === 'raisin' && preview?.accounts?.length > 0) setStep('mapping');
+            if (preview?.format === 'abn_savings' && preview?.accounts?.length > 0) setStep('mapping');
             else reset();
           }}
           onImported={handleImported}

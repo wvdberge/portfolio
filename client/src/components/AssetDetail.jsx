@@ -112,9 +112,9 @@ function AddTransactionModal({ asset, onClose, onSaved }) {
   }, [isTradeTx, type, quantity, pricePerUnit, fee]);
 
   const liquidTypes = isLiquid
-    ? ['buy', 'sell', 'dividend']
+    ? ['buy', 'sell', 'dividend', 'fee']
     : isSavings
-    ? ['deposit', 'withdrawal', 'interest']
+    ? ['deposit', 'withdrawal', 'interest', 'fee']
     : ['deposit', 'withdrawal'];
 
   async function submit(e) {

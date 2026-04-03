@@ -19,7 +19,7 @@ Built with Express + SQLite on the backend and React + Vite on the frontend.
 - Track stocks, ETFs, savings accounts, real estate, pension, crypto, and other assets
 - Per-asset current value using the right method per type:
   - Liquid (stock/ETF/crypto): latest price × net holdings
-  - Savings: sum of deposits + interest − withdrawals
+  - Savings: sum of deposits + interest − withdrawals − fees
   - Illiquid (real estate/pension/other): latest snapshot value
 - Manual override via value snapshots (takes precedence over price-based calculation)
 - Soft delete (archive) to keep history intact
@@ -27,8 +27,9 @@ Built with Express + SQLite on the backend and React + Vite on the frontend.
 
 ### Transactions
 - Full transaction history per asset
-- Types: buy, sell, deposit, withdrawal, dividend, interest
+- Types: buy, sell, deposit, withdrawal, dividend, interest, fee
 - Auto-calculates total amount for buy/sell (qty × price ± fee)
+- `fee` type: broker/custody costs deducted from savings balance, treated as outflow in XIRR (not a return of capital)
 
 ### Prices
 - Manual price entry per asset
@@ -50,11 +51,13 @@ Built with Express + SQLite on the backend and React + Vite on the frontend.
 - Balance snapshots with optional interest rate
 
 ### CSV Import (`/import`)
-- Multi-step flow: upload → (account mapping for Raisin) → row review → commit
+- Multi-step flow: upload → (account mapping for ABN Savings) → row review → commit
 - Duplicate detection before saving
 - Supported formats:
-  - **ABN AMRO brokerage** — fully implemented
-  - **Raisin** — fully implemented, including account→asset mapping UI and persistent mapping storage
+  - **ABN AMRO brokerage** (CSV) — buy, sell, dividend, CA (dividend reinvestment)
+  - **ABN AMRO savings account** (TAB) — buy, sell, dividend, deposit, withdrawal, fee, interest; auto-detected by `.TAB` extension; requires fund→asset mapping on first import
+  - **Centraal Beheer** (CSV, UTF-16 LE encoded) — buy transactions only; `Overboeking` rows skipped
+  - **Meesman** (CSV) — buy transactions; `Dividend herbelegging` emits a synthetic dividend + buy pair so the reinvestment has zero net XIRR impact
 
 ### Benchmark & CPI data entry
 - Manual entry of MSCI World index prices for benchmark comparison
@@ -278,7 +281,7 @@ portfolio/
 
 ## XIRR Computation
 
-XIRR is computed in plain JavaScript (no external library) using Newton-Raphson with a bisection fallback. Cash flow sign convention: **buy/deposit = negative (outflow), sell/withdrawal/dividend/interest = positive (inflow)**.
+XIRR is computed in plain JavaScript (no external library) using Newton-Raphson with a bisection fallback. Cash flow sign convention: **buy/deposit/fee = negative (outflow), sell/withdrawal/dividend/interest = positive (inflow)**.
 
 For period-based XIRR (1Y, 3Y):
 - A synthetic opening cash flow is added on the period start date equal to the reconstructed asset/portfolio value at that date
@@ -290,19 +293,9 @@ All-time XIRR uses actual transactions only (no synthetic opening) plus a termin
 
 ## Still To Do
 
-### CSV import parsers — stubs only
-
-Three parsers exist as stubs in `server/routes/import.js` and throw `"not yet implemented"`. Column names need to be confirmed against real export files before these can be completed:
-
-- **Centraal Beheer** — expected: date, type, fund name, units, NAV, amount
-- **Meesman** — expected: date, fund name, units purchased, NAV per unit
-- **Brand New Day** — expected: similar to Meesman (units + NAV)
-
 ### Historical price backfill
 
-The current price fetchers only retrieve today's latest NAV. There is no way to backfill historical prices for:
-- **Meesman** — they offer an Excel download of historical NAV data; parsing this is not yet implemented
-- **Brand New Day** — the same fund rates API endpoint likely supports date ranges but this has not been explored
+The current price fetchers only retrieve today's latest NAV. There is no way to backfill historical prices for Meesman — they offer an Excel download of historical NAV data; parsing this is not yet implemented.
 
 ### Automatic Dutch CPI fetching (CBS API)
 
@@ -336,5 +329,6 @@ The per-asset rows in the yearly summary always show `—` for real return %. On
 - **No ORM** — raw `better-sqlite3` prepared statements throughout
 - **No global state** — React component-local state only (`useState`/`useEffect`)
 - **Amounts always positive** in the database; sign is derived from transaction type at computation time
+- **`fee` type** — treated as outflow in XIRR and subtracted from savings balance, but excluded from contributions tracking (it's a cost, not a capital movement)
 - **Archived assets** are soft-deleted and excluded from current net worth but included in historical XIRR cash flows
 - **Snapshot override rule**: a manual value snapshot takes precedence over price-based calculation if it is more recent than the latest price entry

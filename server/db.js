@@ -93,6 +93,36 @@ try {
   if (!e.message.includes('duplicate column')) throw e;
 }
 
+// Add 'fee' to transactions type CHECK — requires table recreation (SQLite limitation)
+{
+  const txSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'").get();
+  if (txSchema && !txSchema.sql.includes("'fee'")) {
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.exec(`
+        BEGIN;
+        ALTER TABLE transactions RENAME TO _transactions_old;
+        CREATE TABLE transactions (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          asset_id       INTEGER NOT NULL REFERENCES assets(id),
+          date           TEXT NOT NULL,
+          type           TEXT NOT NULL CHECK(type IN ('buy','sell','deposit','withdrawal','dividend','interest','fee')),
+          quantity       REAL,
+          price_per_unit REAL,
+          amount         REAL NOT NULL CHECK(amount >= 0),
+          fee            REAL,
+          notes          TEXT
+        );
+        INSERT INTO transactions SELECT * FROM _transactions_old;
+        DROP TABLE _transactions_old;
+        COMMIT;
+      `);
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseDate(dateStr) {
@@ -160,8 +190,8 @@ function getAssetCurrentValue(assetId) {
 
     const result = db.prepare(`
       SELECT
-        COALESCE(SUM(CASE WHEN type IN ('deposit','interest') THEN amount ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN type = 'withdrawal'           THEN amount ELSE 0 END), 0) AS balance
+        COALESCE(SUM(CASE WHEN type IN ('deposit','interest')    THEN amount ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN type IN ('withdrawal','fee') THEN amount ELSE 0 END), 0) AS balance
       FROM transactions
       WHERE asset_id = ?
     `).get(assetId);
@@ -236,8 +266,8 @@ function getAssetValueAtDate(assetId, dateStr) {
 
     const result = db.prepare(`
       SELECT
-        COALESCE(SUM(CASE WHEN type IN ('deposit','interest') THEN amount ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN type = 'withdrawal' THEN amount ELSE 0 END), 0) AS balance
+        COALESCE(SUM(CASE WHEN type IN ('deposit','interest')    THEN amount ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN type IN ('withdrawal','fee') THEN amount ELSE 0 END), 0) AS balance
       FROM transactions
       WHERE asset_id = ? AND date <= ?
     `).get(assetId, dateStr);
@@ -347,7 +377,7 @@ function buildCashflows(assetIds, fromDateStr, toDateStr) {
       : 'SELECT date, type, amount FROM transactions WHERE asset_id = ? AND date <= ? ORDER BY date';
     const params = fromDateStr ? [assetId, fromDateStr, toDateStr] : [assetId, toDateStr];
     for (const tx of db.prepare(query).all(...params)) {
-      const isOut = tx.type === 'buy' || tx.type === 'deposit';
+      const isOut = tx.type === 'buy' || tx.type === 'deposit' || tx.type === 'fee';
       cfs.push({ date: parseDate(tx.date), amount: isOut ? -tx.amount : tx.amount });
     }
   }

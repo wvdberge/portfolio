@@ -93,53 +93,199 @@ function parseAbnAmro(rows) {
   });
 }
 
-function parseRaisin(rows) {
-  return rows.map((row) => {
-    try {
-      const dateRaw = row['Date'] || row['Datum'] || row['Datum/tijd'] || '';
-      const accountName = (row['Account Name'] || row['Account'] || row['Accountnaam'] || '').trim();
-      const typeRaw = (row['Transaction type'] || row['Type'] || row['Transactietype'] || '').trim().toLowerCase();
-      const amountRaw = row['Amount'] || row['Bedrag'] || row['Saldo'] || '';
+function parseMeesman(rows) {
+  function parseAmount(raw) {
+    return parseDutchNumber(String(raw || '').replace(/€\s*/g, '').trim());
+  }
 
-      if (!dateRaw || !accountName || !typeRaw) {
-        return { status: 'error', error: 'Missing required field', _raw: row };
+  return rows.flatMap(row => {
+    try {
+      const dateRaw = (row['Datum'] || '').trim();
+      const typeRaw = (row['Type'] || '').trim();
+      const fundName = (row['Fonds'] || '').trim();
+
+      if (!dateRaw || !typeRaw || !fundName) {
+        return [{ status: 'error', error: 'Missing required field', _raw: row }];
       }
 
-      let date;
       const dmyMatch = dateRaw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-      const mdyMatch = dateRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (dmyMatch) date = `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
-      else if (mdyMatch) date = `${mdyMatch[3]}-${mdyMatch[1]}-${mdyMatch[2]}`;
-      else if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) date = dateRaw.slice(0, 10);
-      else return { status: 'error', error: `Unrecognised date format: ${dateRaw}`, _raw: row };
+      if (!dmyMatch) return [{ status: 'error', error: `Unrecognised date: ${dateRaw}`, _raw: row }];
+      const date = `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
 
-      const typeMap = {
-        'deposit': 'deposit', 'storting': 'deposit', 'inleg': 'deposit',
-        'withdrawal': 'withdrawal', 'opname': 'withdrawal', 'uitkering': 'withdrawal',
-        'interest': 'interest', 'rente': 'interest',
+      const bruto = parseAmount(row['Bruto']);
+      const netto = parseAmount(row['Netto']);
+      const kosten = parseAmount(row['Kosten']);
+      if (isNaN(bruto)) return [{ status: 'error', error: 'Invalid amount', _raw: row }];
+
+      const quantity = row['Aantal'] ? parseDutchNumber(row['Aantal']) : null;
+      const price = row['Koers'] ? parseDutchNumber(row['Koers']) : null;
+
+      const base = {
+        status: 'ok',
+        asset_name: fundName,
+        external_name: fundName,
+        broker: 'meesman',
+        quantity: quantity && !isNaN(quantity) ? quantity : null,
+        price_per_unit: price && !isNaN(price) ? price : null,
+        fee: kosten > 0 && !isNaN(kosten) ? kosten : null,
+        notes: null,
+        asset_id: null,
       };
-      const type = typeMap[typeRaw];
-      if (!type) return { status: 'error', error: `Unknown type: ${typeRaw}`, _raw: row };
 
-      const amount = Math.abs(parseFloat(amountRaw.toString().replace(',', '.')) || 0);
-      if (isNaN(amount)) return { status: 'error', error: 'Invalid amount', _raw: row };
+      if (typeRaw === 'Aankoop') {
+        return [{ ...base, date, type: 'buy', amount: bruto }];
+      }
+
+      if (typeRaw === 'Dividend herbelegging') {
+        // No external cash flow — emit dividend (inflow) + buy (outflow) so they cancel in XIRR
+        return [
+          { ...base, date, type: 'dividend', amount: netto, fee: null, notes: 'Dividend herbelegging' },
+          { ...base, date, type: 'buy',      amount: netto,            notes: 'Dividend herbelegging' },
+        ];
+      }
+
+      return [{ status: 'error', error: `Unknown type: ${typeRaw}`, _raw: row }];
+    } catch (err) {
+      return [{ status: 'error', error: err.message, _raw: row }];
+    }
+  });
+}
+
+function parseCentraalBeheer(rows) {
+  return rows.flatMap(row => {
+    try {
+      const typeRaw = (row['Soort'] || '').trim();
+      if (typeRaw === 'Overboeking') return []; // incoming bank transfer — skip
+
+      const dateRaw = (row['Boekdatum'] || '').trim();
+      const fundName = (row['Fondsnaam'] || '').trim();
+
+      if (!dateRaw || !typeRaw) return [{ status: 'error', error: 'Missing date or type', _raw: row }];
+
+      const dmyMatch = dateRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!dmyMatch) return [{ status: 'error', error: `Unrecognised date: ${dateRaw}`, _raw: row }];
+      const date = `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+
+      if (typeRaw === 'Aankoop') {
+        if (!fundName) return [{ status: 'error', error: 'Missing fund name', _raw: row }];
+
+        const netto = parseDutchNumber(row['Netto bedrag (EUR)']);
+        const fee = parseDutchNumber(row['Aankoopkosten']) || 0;
+        const quantity = row['Aantal stukken'] ? parseDutchNumber(row['Aantal stukken']) : null;
+        const price = row['Koers'] ? parseDutchNumber(row['Koers']) : null;
+
+        if (isNaN(netto)) return [{ status: 'error', error: 'Invalid amount', _raw: row }];
+
+        return [{
+          status: 'ok',
+          date,
+          type: 'buy',
+          asset_name: fundName,
+          external_name: fundName,
+          broker: 'centraal_beheer',
+          quantity: quantity && !isNaN(quantity) ? quantity : null,
+          price_per_unit: price && !isNaN(price) ? price : null,
+          amount: netto,
+          fee: fee > 0 ? fee : null,
+          notes: null,
+          asset_id: null,
+        }];
+      }
+
+      return [{ status: 'error', error: `Unknown type: ${typeRaw}`, _raw: row }];
+    } catch (err) {
+      return [{ status: 'error', error: err.message, _raw: row }];
+    }
+  });
+}
+
+function parseAbnSavings(rawText) {
+  const lines = rawText.split('\n').filter(l => l.trim());
+  return lines.map(line => {
+    try {
+      const cols = line.split('\t');
+      if (cols.length < 8) {
+        return { status: 'error', error: `Expected 8 columns, got ${cols.length}`, _raw: line.slice(0, 80) };
+      }
+
+      const dateRaw = cols[2].trim();
+      if (!/^\d{8}$/.test(dateRaw)) {
+        return { status: 'error', error: `Invalid date: ${dateRaw}`, _raw: line.slice(0, 80) };
+      }
+      const date = `${dateRaw.slice(0, 4)}-${dateRaw.slice(4, 6)}-${dateRaw.slice(6, 8)}`;
+
+      const signedAmount = parseDutchNumber(cols[6].trim());
+      if (isNaN(signedAmount)) {
+        return { status: 'error', error: `Invalid amount: ${cols[6]}`, _raw: line.slice(0, 80) };
+      }
+      const amount = Math.abs(signedAmount);
+
+      const desc = (cols[7] || '').replace(/\s+/g, ' ').trim();
+      const accountNum = cols[0].trim();
+
+      let type, target, asset_name, external_name, quantity = null, price_per_unit = null, notes = null;
+
+      if (/^STORTING BELEG\. FONDS/.test(desc) || /^HERBELEGGING/.test(desc)) {
+        type = 'buy';
+        target = 'fund';
+        const m = desc.match(/^(?:STORTING BELEG\. FONDS|HERBELEGGING)\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
+        asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
+        external_name = m ? m[2] : null;
+        const qp = desc.match(/ST\s+([\d,.]+)\s*@\s*EUR\s+([\d,.]+)/);
+        if (qp) { quantity = parseDutchNumber(qp[1]); price_per_unit = parseDutchNumber(qp[2]); }
+      } else if (/^OPNAME BELEG\. FONDS/.test(desc)) {
+        type = 'sell';
+        target = 'fund';
+        const m = desc.match(/^OPNAME BELEG\. FONDS\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
+        asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
+        external_name = m ? m[2] : null;
+        const qp = desc.match(/ST\s+([\d,.]+)\s*@\s*EUR\s+([\d,.]+)/);
+        if (qp) { quantity = parseDutchNumber(qp[1]); price_per_unit = parseDutchNumber(qp[2]); }
+      } else if (/^DIVIDEND/.test(desc)) {
+        type = 'dividend';
+        target = 'fund';
+        const m = desc.match(/^DIVIDEND\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
+        asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
+        external_name = m ? m[2] : null;
+        const taxMatch = desc.match(/BELASTING\s+EUR\s+([\d,.]+)/i);
+        if (taxMatch) notes = `Dividendbelasting EUR ${parseDutchNumber(taxMatch[1]).toFixed(2)} (already deducted)`;
+      } else if (/^SEPA/.test(desc)) {
+        type = signedAmount >= 0 ? 'deposit' : 'withdrawal';
+        target = 'savings';
+        asset_name = `ABN ${accountNum}`;
+        external_name = accountNum;
+      } else if (/Servicekosten/i.test(desc)) {
+        type = 'fee';
+        target = 'savings';
+        asset_name = `ABN ${accountNum}`;
+        external_name = accountNum;
+        notes = 'ABN AMRO servicekosten';
+      } else if (/^RENTE EN\/OF KOSTEN/.test(desc)) {
+        type = 'interest';
+        target = 'savings';
+        asset_name = `ABN ${accountNum}`;
+        external_name = accountNum;
+      } else {
+        return { status: 'error', error: `Unrecognised description: ${desc.slice(0, 60)}`, _raw: line.slice(0, 80) };
+      }
 
       return {
         status: 'ok',
         date,
         type,
-        asset_name: accountName,
-        external_account: accountName,
-        broker: 'raisin',
-        quantity: null,
-        price_per_unit: null,
+        target,
+        asset_name: asset_name || `ABN ${accountNum}`,
+        external_name: external_name || accountNum,
+        broker: 'abn_savings',
+        quantity: quantity != null && !isNaN(quantity) ? quantity : null,
+        price_per_unit: price_per_unit != null && !isNaN(price_per_unit) ? price_per_unit : null,
         amount,
         fee: null,
-        notes: null,
+        notes,
         asset_id: null,
       };
     } catch (err) {
-      return { status: 'error', error: err.message, _raw: row };
+      return { status: 'error', error: err.message, _raw: line.slice(0, 80) };
     }
   });
 }
@@ -156,25 +302,21 @@ function parseMeesman(rows) {
   throw new Error('Meesman parser not yet implemented');
 }
 
-function parseBrandNewDay(rows) {
-  // TODO: confirm column names from sample export
-  // Expected: similar to Meesman — units + NAV
-  throw new Error('Brand New Day parser not yet implemented');
-}
 
 function detectFormat(filename, headers) {
   const lower = filename.toLowerCase();
-  if (lower.includes('raisin')) return 'raisin';
-  if (lower.includes('abn') || lower.includes('abnAmro')) return 'abn';
+  if (lower.endsWith('.tab')) return 'abn_savings';
+  if (lower.includes('abn') || lower.includes('abnamro')) return 'abn';
   if (lower.includes('centraal') || lower.includes('centraal_beheer')) return 'centraal_beheer';
   if (lower.includes('meesman')) return 'meesman';
-  if (lower.includes('brand') || lower.includes('bnd')) return 'brand_new_day';
+
 
   // Heuristics on headers
   const h = headers.map(s => s.toLowerCase());
-  if (h.includes('account name') || h.includes('accountnaam')) return 'raisin';
   if (h.includes('netto waarde') || h.includes('order type') || h.includes('aantal/bedrag')) return 'abn';
   if (h.includes('isin') && (h.includes('koop') || h.includes('omschrijving') || h.includes('naam fonds'))) return 'abn';
+  if (h.includes('datum') && h.includes('type') && h.includes('fonds') && h.includes('bruto')) return 'meesman';
+  if (h.some(c => c.includes('boekdatum')) && h.some(c => c.includes('soort'))) return 'centraal_beheer';
 
   return null;
 }
@@ -207,11 +349,77 @@ router.get('/mappings', (req, res) => {
 router.post('/preview', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const csv = req.file.buffer.toString('utf8');
+  const rawText = req.file.buffer.toString('utf8');
   const filename = req.file.originalname || '';
 
-  // PapaParse with auto-delimiter detection
-  const parsed = Papa.parse(csv, {
+  // Detect format early — needed before PapaParse for headerless formats
+  let format = req.body.format || detectFormat(filename, []);
+
+  // ── Centraal Beheer (UTF-16 LE encoded, semicolon-delimited) ─────────────
+  if (format === 'centraal_beheer') {
+    let csvText = rawText;
+    if (req.file.buffer[0] === 0xFF && req.file.buffer[1] === 0xFE) {
+      csvText = req.file.buffer.toString('utf16le').replace(/^\uFEFF/, '');
+    }
+    const cbParsed = Papa.parse(csvText, { header: true, delimiter: ';', skipEmptyLines: true, dynamicTyping: false });
+    let rows;
+    try {
+      rows = parseCentraalBeheer(cbParsed.data);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    for (const row of rows) {
+      if (row.status !== 'ok') continue;
+      const mapping = db.prepare('SELECT asset_id FROM import_mappings WHERE broker = ? AND external_name = ?').get('centraal_beheer', row.external_name);
+      if (mapping) {
+        row.asset_id = mapping.asset_id;
+      } else {
+        const asset = db.prepare("SELECT id FROM assets WHERE LOWER(name) = LOWER(?) AND archived = 0").get(row.asset_name);
+        if (asset) row.asset_id = asset.id;
+      }
+      if (row.asset_id && checkDuplicate(row)) row.status = 'duplicate';
+    }
+    return res.json({ format, rows });
+  }
+
+  // ── ABN Savings TAB (headerless, tab-separated) ───────────────────────────
+  if (format === 'abn_savings') {
+    let rows;
+    try {
+      rows = parseAbnSavings(rawText);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    // Build label map: external_name → human-readable label
+    const labelMap = {};
+    for (const r of rows.filter(r => r.status === 'ok')) {
+      if (r.external_name && !labelMap[r.external_name]) {
+        labelMap[r.external_name] = r.target === 'fund'
+          ? `${r.asset_name} (${r.external_name})`
+          : `ABN spaarrekening ${r.external_name}`;
+      }
+    }
+
+    const existingMappings = db.prepare(
+      'SELECT external_name, asset_id FROM import_mappings WHERE broker = ?'
+    ).all('abn_savings').reduce((m, r) => { m[r.external_name] = r.asset_id; return m; }, {});
+
+    // Pre-resolve duplicates using existing mappings
+    for (const row of rows) {
+      if (row.status !== 'ok') continue;
+      const mappedId = existingMappings[row.external_name];
+      if (mappedId) {
+        row.asset_id = mappedId;
+        if (checkDuplicate(row)) row.status = 'duplicate';
+      }
+    }
+
+    return res.json({ format, accounts: Object.keys(labelMap), accountLabels: labelMap, existingMappings, rows });
+  }
+
+  // ── CSV formats (PapaParse) ───────────────────────────────────────────────
+  const parsed = Papa.parse(rawText, {
     header: true,
     skipEmptyLines: true,
     delimiter: '',     // auto-detect
@@ -223,7 +431,7 @@ router.post('/preview', upload.single('file'), (req, res) => {
   }
 
   const headers = parsed.meta.fields || [];
-  const format = req.body.format || detectFormat(filename, headers);
+  if (!format) format = detectFormat(filename, headers);
 
   if (!format) {
     return res.status(400).json({ error: 'Could not detect CSV format. Specify format manually.' });
@@ -232,46 +440,27 @@ router.post('/preview', upload.single('file'), (req, res) => {
   let rows;
   try {
     if (format === 'abn') rows = parseAbnAmro(parsed.data);
-    else if (format === 'raisin') rows = parseRaisin(parsed.data);
-    else if (format === 'centraal_beheer') rows = parseCentraalBeheer(parsed.data);
     else if (format === 'meesman') rows = parseMeesman(parsed.data);
-    else if (format === 'brand_new_day') rows = parseBrandNewDay(parsed.data);
     else return res.status(400).json({ error: `Unknown format: ${format}` });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
 
-  // For ABN: try to resolve asset_id via import_mappings or name match
-  if (format === 'abn') {
-    for (const row of rows) {
-      if (row.status !== 'ok') continue;
-      const mapping = db.prepare(
-        'SELECT asset_id FROM import_mappings WHERE broker = ? AND external_name = ?'
-      ).get('abn', row.external_name);
-      if (mapping) {
-        row.asset_id = mapping.asset_id;
-      } else {
-        // Try name match
-        const asset = db.prepare(
-          "SELECT id FROM assets WHERE LOWER(name) = LOWER(?) AND archived = 0"
-        ).get(row.asset_name);
-        if (asset) row.asset_id = asset.id;
-      }
-      // Check duplicate (only if asset resolved)
-      if (row.asset_id && checkDuplicate(row)) row.status = 'duplicate';
+  // Resolve asset_id via import_mappings or name match (ABN brokerage + Meesman)
+  for (const row of rows) {
+    if (row.status !== 'ok') continue;
+    const mapping = db.prepare(
+      'SELECT asset_id FROM import_mappings WHERE broker = ? AND external_name = ?'
+    ).get(format, row.external_name);
+    if (mapping) {
+      row.asset_id = mapping.asset_id;
+    } else {
+      const asset = db.prepare(
+        "SELECT id FROM assets WHERE LOWER(name) = LOWER(?) AND archived = 0"
+      ).get(row.asset_name);
+      if (asset) row.asset_id = asset.id;
     }
-
-    return res.json({ format, rows });
-  }
-
-  // For Raisin: return unique account names + existing mappings so UI can show mapping step
-  if (format === 'raisin') {
-    const accounts = [...new Set(rows.filter(r => r.status === 'ok').map(r => r.external_account))];
-    const existingMappings = db.prepare(
-      'SELECT external_name, asset_id FROM import_mappings WHERE broker = ?'
-    ).all('raisin').reduce((m, r) => { m[r.external_name] = r.asset_id; return m; }, {});
-
-    return res.json({ format, accounts, existingMappings, rows });
+    if (row.asset_id && checkDuplicate(row)) row.status = 'duplicate';
   }
 
   res.json({ format, rows });
@@ -284,17 +473,15 @@ router.post('/commit', (req, res) => {
 
   let imported = 0, skipped = 0, caCount = 0;
   const errors = [];
-
-  // Save Raisin mappings & resolve asset_ids
   const newAssetCache = {};
 
   for (const row of rows) {
     if (row.status === 'skip' || row.status === 'duplicate') { skipped++; continue; }
     if (row.status === 'error') { errors.push({ row, reason: row.error }); continue; }
 
-    // Resolve asset_id for Raisin
-    if (row.broker === 'raisin' && row.external_account) {
-      const mapping = mappings[row.external_account];
+    // Resolve asset_id for ABN Savings
+    if (row.broker === 'abn_savings' && row.external_name) {
+      const mapping = mappings[row.external_name];
       if (!mapping) { errors.push({ row, reason: 'No asset mapping provided' }); continue; }
 
       if (typeof mapping === 'number') {
@@ -302,12 +489,11 @@ router.post('/commit', (req, res) => {
       } else if (typeof mapping === 'string' && mapping.startsWith('new:')) {
         const assetName = mapping.slice(4).trim();
         if (!assetName) { errors.push({ row, reason: 'Empty asset name for new asset' }); continue; }
-
         if (!newAssetCache[assetName]) {
-          // Create new savings asset
+          const typeGuess = row.target === 'fund' ? 'etf' : 'savings';
           const info = db.prepare(
-            "INSERT INTO assets (name, type, currency) VALUES (?, 'savings', 'EUR')"
-          ).run(assetName);
+            'INSERT INTO assets (name, type, currency) VALUES (?, ?, ?)'
+          ).run(assetName, typeGuess, 'EUR');
           newAssetCache[assetName] = info.lastInsertRowid;
         }
         row.asset_id = newAssetCache[assetName];
@@ -315,17 +501,16 @@ router.post('/commit', (req, res) => {
         row.asset_id = parseInt(mapping, 10);
       }
 
-      // Save/update mapping
       if (row.asset_id) {
         db.prepare(`
           INSERT INTO import_mappings (broker, external_name, asset_id) VALUES (?, ?, ?)
           ON CONFLICT(broker, external_name) DO UPDATE SET asset_id = excluded.asset_id
-        `).run('raisin', row.external_account, row.asset_id);
+        `).run('abn_savings', row.external_name, row.asset_id);
       }
     }
 
-    // Resolve asset_id for ABN (create if still unresolved)
-    if (row.broker === 'abn' && !row.asset_id) {
+    // Resolve asset_id for ABN brokerage, Meesman, Centraal Beheer (create if still unresolved)
+    if (['abn', 'meesman', 'centraal_beheer'].includes(row.broker) && !row.asset_id) {
       const assetName = row.asset_name;
       if (!newAssetCache[assetName]) {
         const typeGuess = ['buy', 'sell', 'dividend'].includes(row.type) ? 'etf' : 'other';
@@ -333,12 +518,11 @@ router.post('/commit', (req, res) => {
           'INSERT INTO assets (name, type, currency) VALUES (?, ?, ?)'
         ).run(assetName, typeGuess, 'EUR');
         newAssetCache[assetName] = info.lastInsertRowid;
-        // Save mapping
         if (row.external_name) {
           db.prepare(`
             INSERT INTO import_mappings (broker, external_name, asset_id) VALUES (?, ?, ?)
             ON CONFLICT(broker, external_name) DO UPDATE SET asset_id = excluded.asset_id
-          `).run('abn', row.external_name, info.lastInsertRowid);
+          `).run(row.broker, row.external_name, info.lastInsertRowid);
         }
       }
       row.asset_id = newAssetCache[assetName];
