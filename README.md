@@ -175,9 +175,9 @@ The SQLite database is stored in a named Docker volume (`portfolio-data`) so it 
 ### Updating to a new version
 
 ```bash
-git pull                   # get the latest code
-docker compose build       # rebuild the image
-docker compose up -d       # restart with the new image
+sudo git pull              # get the latest code
+sudo docker compose build  # rebuild the image
+sudo docker compose up -d  # restart with the new image
 ```
 
 The database volume is untouched during updates.
