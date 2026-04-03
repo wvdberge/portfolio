@@ -14,85 +14,6 @@ function parseDutchNumber(raw) {
   return parseFloat(String(raw).replace(/\./g, '').replace(',', '.'));
 }
 
-function parseAbnAmro(rows) {
-  return rows.map((row, i) => {
-    try {
-      const dateRaw = row['Datum'] || row['Date'] || '';
-      const typeRaw = (row['Order type'] || row['Omschrijving'] || row['Type'] || '').trim();
-      const name = (row['Naam fonds'] || row['Naam'] || row['Security'] || '').trim();
-      const isin = (row['ISIN'] || '').trim();
-      const qtyRaw = row['Aantal/Bedrag'] || row['Aantal'] || row['Quantity'] || '';
-      const priceRaw = row['Koers'] || row['Price'] || '';
-      const fxRateRaw = row['Koersratio'] || row['Exchange Rate'] || '1';
-      const feeRaw = row['Provisie'] || row['Commission'] || row['Fee'] || '0';
-      const netAmountRaw = row['Netto waarde'] || row['Transactiewaarde'] || row['Net Amount'] || row['Bedrag'] || '';
-
-      if (!dateRaw || !typeRaw) return { status: 'error', error: 'Missing date or type', _raw: row };
-
-      // Parse date: d-m-yyyy, dd-mm-yyyy, or yyyy-mm-dd
-      let date;
-      const dmyMatch = dateRaw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-      if (dmyMatch) {
-        const d = dmyMatch[1].padStart(2, '0');
-        const m = dmyMatch[2].padStart(2, '0');
-        date = `${dmyMatch[3]}-${m}-${d}`;
-      } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
-        date = dateRaw;
-      } else {
-        return { status: 'error', error: `Unrecognised date format: ${dateRaw}`, _raw: row };
-      }
-
-      const isCA = typeRaw === 'CA';
-      const typeMap = {
-        'Aankoop': 'buy', 'Koop': 'buy',
-        'Verkoop': 'sell',
-        'Dividend': 'dividend',
-        'CA': 'dividend',
-      };
-      const type = typeMap[typeRaw];
-      if (!type) return { status: 'error', error: `Unknown transaction type: ${typeRaw}`, _raw: row };
-
-      const fxRate = parseDutchNumber(fxRateRaw) || 1;
-      // For CA rows, Koers = dividend/unit (not NAV) and Aantal = existing units held — skip both
-      const quantity = (!isCA && qtyRaw) ? parseDutchNumber(qtyRaw) : null;
-      const pricePerUnit = (!isCA && priceRaw) ? parseDutchNumber(priceRaw) : null;
-      const fee = Math.abs(parseDutchNumber(feeRaw) || 0);
-
-      let amount;
-      if (netAmountRaw) {
-        amount = Math.abs(parseDutchNumber(netAmountRaw) / fxRate);
-      } else if (quantity && pricePerUnit) {
-        amount = Math.abs(quantity * pricePerUnit / fxRate) + (type === 'buy' ? fee : -fee);
-      } else {
-        return { status: 'error', error: 'Cannot determine amount', _raw: row };
-      }
-
-      if (isNaN(amount)) return { status: 'error', error: 'Invalid amount', _raw: row };
-
-      const notes = isCA ? 'CA (dividend reinvestment) — add corresponding buy manually' : (isin ? `ISIN: ${isin}` : null);
-      const externalName = isin || name;
-
-      return {
-        status: 'ok',
-        date,
-        type,
-        asset_name: name,
-        external_name: externalName,
-        broker: 'abn',
-        isCA,
-        quantity: quantity && !isNaN(quantity) ? quantity : null,
-        price_per_unit: pricePerUnit && !isNaN(pricePerUnit) ? pricePerUnit / fxRate : null,
-        amount,
-        fee: fee > 0 ? fee : null,
-        notes,
-        asset_id: null,
-      };
-    } catch (err) {
-      return { status: 'error', error: err.message, _raw: row };
-    }
-  });
-}
-
 function parseMeesman(rows) {
   function parseAmount(raw) {
     return parseDutchNumber(String(raw || '').replace(/€\s*/g, '').trim());
@@ -290,31 +211,14 @@ function parseAbnSavings(rawText) {
   });
 }
 
-function parseCentraalBeheer(rows) {
-  // TODO: confirm column names from sample export
-  // Expected: date, type, fund name, units, NAV, amount
-  throw new Error('Centraal Beheer parser not yet implemented');
-}
-
-function parseMeesman(rows) {
-  // TODO: confirm column names from sample export
-  // Expected: date, fund name, units purchased, NAV per unit
-  throw new Error('Meesman parser not yet implemented');
-}
-
-
 function detectFormat(filename, headers) {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.tab')) return 'abn_savings';
-  if (lower.includes('abn') || lower.includes('abnamro')) return 'abn';
   if (lower.includes('centraal') || lower.includes('centraal_beheer')) return 'centraal_beheer';
   if (lower.includes('meesman')) return 'meesman';
 
-
   // Heuristics on headers
   const h = headers.map(s => s.toLowerCase());
-  if (h.includes('netto waarde') || h.includes('order type') || h.includes('aantal/bedrag')) return 'abn';
-  if (h.includes('isin') && (h.includes('koop') || h.includes('omschrijving') || h.includes('naam fonds'))) return 'abn';
   if (h.includes('datum') && h.includes('type') && h.includes('fonds') && h.includes('bruto')) return 'meesman';
   if (h.some(c => c.includes('boekdatum')) && h.some(c => c.includes('soort'))) return 'centraal_beheer';
 
@@ -439,14 +343,13 @@ router.post('/preview', upload.single('file'), (req, res) => {
 
   let rows;
   try {
-    if (format === 'abn') rows = parseAbnAmro(parsed.data);
-    else if (format === 'meesman') rows = parseMeesman(parsed.data);
+    if (format === 'meesman') rows = parseMeesman(parsed.data);
     else return res.status(400).json({ error: `Unknown format: ${format}` });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
 
-  // Resolve asset_id via import_mappings or name match (ABN brokerage + Meesman)
+  // Resolve asset_id via import_mappings or name match (Meesman)
   for (const row of rows) {
     if (row.status !== 'ok') continue;
     const mapping = db.prepare(
@@ -509,8 +412,8 @@ router.post('/commit', (req, res) => {
       }
     }
 
-    // Resolve asset_id for ABN brokerage, Meesman, Centraal Beheer (create if still unresolved)
-    if (['abn', 'meesman', 'centraal_beheer'].includes(row.broker) && !row.asset_id) {
+    // Resolve asset_id for Meesman, Centraal Beheer (create if still unresolved)
+    if (['meesman', 'centraal_beheer'].includes(row.broker) && !row.asset_id) {
       const assetName = row.asset_name;
       if (!newAssetCache[assetName]) {
         const typeGuess = ['buy', 'sell', 'dividend'].includes(row.type) ? 'etf' : 'other';

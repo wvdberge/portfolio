@@ -52,12 +52,11 @@ The `fee` transaction type is treated as outflow in XIRR and subtracted from sav
 
 | Format | Key | Notes |
 |---|---|---|
-| ABN AMRO brokerage | `abn` | CSV; auto-detected by headers |
-| ABN AMRO savings | `abn_savings` | TAB file, no header, tab-separated; auto-detected by `.tab` extension; requires fund→asset mapping step on first import |
+| ABN AMRO savings | `abn_savings` | TAB file, no header, tab-separated; auto-detected by `.tab` extension; requires fund→asset mapping step on first import; covers both savings account and investment funds within ABN |
 | Centraal Beheer | `centraal_beheer` | UTF-16 LE encoded — decoded from buffer before PapaParse; semicolon delimiter; `Overboeking` rows skipped |
 | Meesman | `meesman` | CSV; `Dividend herbelegging` rows emit two transactions (dividend + buy) so reinvestment has zero net XIRR impact; `Stortingsmix` has no qty/price |
 
-All parsers use name/FONDSCODE-based asset mapping saved in `import_mappings` table. ABN brokerage, Meesman, and Centraal Beheer auto-create assets if no mapping found. ABN savings requires explicit mapping via UI before commit.
+All parsers use name/FONDSCODE-based asset mapping saved in `import_mappings` table. Meesman and Centraal Beheer auto-create assets if no mapping found. ABN savings requires explicit mapping via UI before commit.
 
 ## Environment variables
 
