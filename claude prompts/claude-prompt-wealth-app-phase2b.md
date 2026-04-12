@@ -1,6 +1,6 @@
-# Prompt: Personal Wealth Tracker — Phase 2b (Meesman & Brand New Day Price Fetching)
+# Prompt: Personal Portfolio Tracker — Phase 2b (Meesman & Brand New Day Price Fetching)
 
-Phase 2b of the wealth tracker. Phases 1 and 2 are already built, including the Alpha Vantage price fetching integration.
+Phase 2b of the portfolio tracker. Phases 1 and 2 are already built, including the Alpha Vantage price fetching integration.
 
 **Do not modify existing schema or break existing routes.** Add a `price_source` column to the assets table, extend `routes/prices.js`, and add a new `server/priceFetchers.js` module.
 

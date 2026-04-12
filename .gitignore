@@ -5,3 +5,9 @@ dist/
 *.db-wal
 *.db-shm
 .env
+
+# Investment data exports
+*.csv
+*.TAB
+*.pdf
+memory/
