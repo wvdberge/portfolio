@@ -16,6 +16,15 @@ cp -r dist/* ../server/public/   # Express then serves both API and client
 
 No test runner. No linter configured.
 
+## Deploy on NAS
+
+The app runs on the NAS via Dockge (port 5002), pulling `ghcr.io/wvdberge/portfolio:latest`. GitHub Actions builds and pushes a new image on every push to `main` — no manual build step needed.
+
+Deploy workflow:
+1. Commit and push changes
+2. Wait ~2 min for GitHub Actions to build
+3. In **Dockge**: pull the new image and redeploy the `portfolio` stack
+
 ## Architecture
 
 **Full-stack single-user app**: Express 4 + SQLite (server) / React 18 + Vite (client). The server is CommonJS; the client is ESM.
