@@ -9,9 +9,10 @@
 4. `Stortingsmix` rows (no qty/price) import fine with just the amount
 
 ### Centraal Beheer (CSV)
-1. Export from their portal (UTF-16 LE encoded — the importer handles this automatically)
-2. Upload via Import — `Overboeking` rows are automatically skipped
-3. Only `Aankoop` rows are currently parsed; sell/dividend rows will show as errors and need manual entry
+1. Export the account statement from the CB app (UTF-16, LE or BE; the importer handles both). The filename doesn't matter: the importer recognises the file by its header.
+2. Upload via Import. `Overboeking` and `Dividend reservering` rows are skipped.
+3. `Aankoop` imports as a buy. `Dividend Uitkering` imports as a dividend at the net amount (dividendbelasting goes in the notes); CB reinvests it through a separate `Aankoop`, so the two cancel in XIRR.
+4. Sell rows are not parsed yet and show as errors; enter them by hand.
 
 ### ABN AMRO savings (TAB/TXT file)
 1. Log in → Sparen → download TAB/TXT export
