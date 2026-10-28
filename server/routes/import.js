@@ -204,7 +204,8 @@ function parseAbnSavings(rawText) {
       } else if (/^SEPA/.test(desc) || /^\/TRTP\/SEPA/.test(desc)) {
         // Transfers from own current account; contributions are counted at the fund purchase
         return [];
-      } else if (/Servicekosten/i.test(desc)) {
+      } else if (/Servicekosten/i.test(desc) || /^ABNAMRO BELEGGEN/i.test(desc)) {
+        // Since mid-2026 ABN drops the word "Servicekosten": "ABNAMRO Beleggen Zie uw nota voor details"
         type = 'fee';
         target = 'savings';
         asset_name = `ABN ${accountNum}`;
