@@ -91,12 +91,13 @@ function parseCentraalBeheer(rows) {
       if (typeRaw === 'Aankoop') {
         if (!fundName) return [{ status: 'error', error: 'Missing fund name', _raw: row }];
 
-        const netto = parseDutchNumber(row['Netto bedrag (EUR)']);
+        // Bruto = cash paid incl. Aankoopkosten; fee is stored for reference only
+        const bruto = parseDutchNumber(row['Bruto bedrag (EUR)']);
         const fee = parseDutchNumber(row['Aankoopkosten']) || 0;
         const quantity = row['Aantal stukken'] ? parseDutchNumber(row['Aantal stukken']) : null;
         const price = row['Koers'] ? parseDutchNumber(row['Koers']) : null;
 
-        if (isNaN(netto)) return [{ status: 'error', error: 'Invalid amount', _raw: row }];
+        if (isNaN(bruto)) return [{ status: 'error', error: 'Invalid amount', _raw: row }];
 
         return [{
           status: 'ok',
@@ -107,7 +108,7 @@ function parseCentraalBeheer(rows) {
           broker: 'centraal_beheer',
           quantity: quantity && !isNaN(quantity) ? quantity : null,
           price_per_unit: price && !isNaN(price) ? price : null,
-          amount: netto,
+          amount: bruto,
           fee: fee > 0 ? fee : null,
           notes: null,
           asset_id: null,
