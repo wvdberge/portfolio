@@ -206,10 +206,11 @@ function parseAbnSavings(rawText) {
         return [];
       } else if (/Servicekosten/i.test(desc) || /^ABNAMRO BELEGGEN/i.test(desc)) {
         // Since mid-2026 ABN drops the word "Servicekosten": "ABNAMRO Beleggen Zie uw nota voor details"
+        // Fund costs, not savings costs: own mapping key so they can go to a fund asset
         type = 'fee';
-        target = 'savings';
-        asset_name = `ABN ${accountNum}`;
-        external_name = accountNum;
+        target = 'fund';
+        asset_name = 'ABN AMRO servicekosten';
+        external_name = 'servicekosten';
         notes = 'ABN AMRO servicekosten';
       } else if (/^RENTE EN\/OF KOSTEN/.test(desc)) {
         type = 'interest';
