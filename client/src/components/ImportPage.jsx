@@ -4,7 +4,6 @@ import { fmtEur, fmtDate } from '../format.js';
 
 const FORMATS = [
   { value: '', label: 'Auto-detect' },
-  { value: 'abn', label: 'ABN AMRO Brokerage' },
   { value: 'abn_savings', label: 'ABN AMRO Savings Account (.TAB)' },
   { value: 'centraal_beheer', label: 'Centraal Beheer' },
   { value: 'meesman', label: 'Meesman' },

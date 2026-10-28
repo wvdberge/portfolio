@@ -277,6 +277,17 @@ function getAssetValueAtDate(assetId, dateStr) {
   return null;
 }
 
+// True when the asset held something by dateStr but can't be valued then
+// (snapshot-only asset with no snapshot yet). Treating that as 0 inflates returns.
+function isUnvalued(assetId, dateStr) {
+  if (getAssetValueAtDate(assetId, dateStr) !== null) return false;
+  return !!db.prepare('SELECT 1 FROM transactions WHERE asset_id = ? AND date <= ? LIMIT 1').get(assetId, dateStr);
+}
+
+function anyUnvalued(dateStr) {
+  return db.prepare('SELECT id FROM assets WHERE archived = 0').all().some(a => isUnvalued(a.id, dateStr));
+}
+
 function getNetWorthAtDate(dateStr) {
   const assets = db.prepare('SELECT id FROM assets WHERE archived = 0').all();
   let total = 0;
@@ -399,6 +410,7 @@ function getAssetXirr(assetId, period = 'all') {
   const cfs = [];
 
   if (periodStart) {
+    if (isUnvalued(assetId, periodStart)) return null;
     const openVal = getAssetValueAtDate(assetId, periodStart);
     if (openVal !== null && openVal > 0) {
       cfs.push({ date: parseDate(periodStart), amount: -openVal });
@@ -432,6 +444,7 @@ function getPortfolioXirr(period = 'all') {
   const cfs = [];
 
   if (periodStart) {
+    if (anyUnvalued(periodStart)) return null;
     const openNW = getNetWorthAtDate(periodStart);
     if (openNW > 0) cfs.push({ date: parseDate(periodStart), amount: -openNW });
   }
@@ -622,7 +635,7 @@ function getYearlySummary() {
     yearCfs.push(...buildCashflows(allAssetIds, priorEnd, actualEnd));
     yearCfs.push({ date: parseDate(actualEnd), amount: endNW });
     yearCfs.sort((a, b) => a.date - b.date);
-    const nominalReturn = xirr(yearCfs);
+    const nominalReturn = (anyUnvalued(priorEnd) || anyUnvalued(actualEnd)) ? null : xirr(yearCfs);
 
     const msciReturn = getBenchmarkReturn(priorEnd, actualEnd);
     const realReturn = getRealReturn(nominalReturn, priorEnd, actualEnd);
@@ -659,7 +672,7 @@ function getYearlySummary() {
       aCfs.push(...buildCashflows([asset.id], priorEnd, actualEnd));
       aCfs.push({ date: parseDate(actualEnd), amount: evN });
       aCfs.sort((a, b) => a.date - b.date);
-      const aNominal = xirr(aCfs);
+      const aNominal = (isUnvalued(asset.id, priorEnd) || isUnvalued(asset.id, actualEnd)) ? null : xirr(aCfs);
 
       byAssetRows.push({
         year,

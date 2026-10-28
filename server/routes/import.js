@@ -266,7 +266,7 @@ function checkDuplicate(row) {
   const existing = db.prepare(`
     SELECT id FROM transactions
     WHERE asset_id = ? AND date = ? AND type = ? AND ABS(amount - ?) < 0.005
-    ${row.quantity != null ? 'AND ABS(COALESCE(quantity,0) - ?) < 0.000001' : 'AND quantity IS NULL'}
+    ${row.quantity != null ? 'AND (quantity IS NULL OR ABS(quantity - ?) < 0.000001)' : ''}
   `).get(
     row.asset_id, row.date, row.type, row.amount,
     ...(row.quantity != null ? [row.quantity] : [])
