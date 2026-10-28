@@ -77,6 +77,7 @@ function parseCentraalBeheer(rows) {
     try {
       const typeRaw = (row['Soort'] || '').trim();
       if (typeRaw === 'Overboeking') return []; // incoming bank transfer — skip
+      if (typeRaw === 'Dividend reservering') return []; // ex-dividend notice, amounts are zero — skip
 
       const dateRaw = (row['Boekdatum'] || '').trim();
       const fundName = (row['Fondsnaam'] || '').trim();
@@ -109,6 +110,28 @@ function parseCentraalBeheer(rows) {
           amount: netto,
           fee: fee > 0 ? fee : null,
           notes: null,
+          asset_id: null,
+        }];
+      }
+
+      if (typeRaw === 'Dividend Uitkering') {
+        // Net (after dividendbelasting) is reinvested via a separate Aankoop row a day later
+        if (!fundName) return [{ status: 'error', error: 'Missing fund name', _raw: row }];
+        const netto = parseDutchNumber(row['Netto bedrag (EUR)']);
+        const tax = parseDutchNumber(row['Dividendbelasting']) || 0;
+        if (isNaN(netto)) return [{ status: 'error', error: 'Invalid amount', _raw: row }];
+        return [{
+          status: 'ok',
+          date,
+          type: 'dividend',
+          asset_name: fundName,
+          external_name: fundName,
+          broker: 'centraal_beheer',
+          quantity: null,
+          price_per_unit: null,
+          amount: netto,
+          fee: null,
+          notes: tax > 0 ? `Dividendbelasting ${tax.toFixed(2)}` : null,
           asset_id: null,
         }];
       }
@@ -211,6 +234,18 @@ function parseAbnSavings(rawText) {
   });
 }
 
+// Decode upload as UTF-16 (LE or BE, with or without BOM) or UTF-8.
+// Centraal Beheer exports have shipped as both UTF-16 LE with BOM and UTF-16 BE without BOM.
+function decodeBuffer(buf) {
+  if (buf.length >= 2) {
+    const le = (buf[0] === 0xFF && buf[1] === 0xFE) || (buf[0] !== 0 && buf[1] === 0);
+    const be = (buf[0] === 0xFE && buf[1] === 0xFF) || (buf[0] === 0 && buf[1] !== 0);
+    if (le) return buf.toString('utf16le').replace(/^\uFEFF/, '');
+    if (be && buf.length % 2 === 0) return Buffer.from(buf).swap16().toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  return buf.toString('utf8').replace(/^\uFEFF/, '');
+}
+
 function detectFormat(filename, headers) {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.tab')) return 'abn_savings';
@@ -253,19 +288,17 @@ router.get('/mappings', (req, res) => {
 router.post('/preview', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const rawText = req.file.buffer.toString('utf8');
+  const rawText = decodeBuffer(req.file.buffer);
   const filename = req.file.originalname || '';
 
-  // Detect format early — needed before PapaParse for headerless formats
-  let format = req.body.format || detectFormat(filename, []);
+  // Detect format early — needed before PapaParse for headerless formats.
+  // Sniff the first line too, so CB exports with a generic filename are recognised.
+  const firstLine = rawText.split(/\r?\n/, 1)[0];
+  let format = req.body.format || detectFormat(filename, firstLine.split(/[;,\t]/));
 
-  // ── Centraal Beheer (UTF-16 LE encoded, semicolon-delimited) ─────────────
+  // ── Centraal Beheer (UTF-16 encoded, semicolon-delimited) ────────────────
   if (format === 'centraal_beheer') {
-    let csvText = rawText;
-    if (req.file.buffer[0] === 0xFF && req.file.buffer[1] === 0xFE) {
-      csvText = req.file.buffer.toString('utf16le').replace(/^\uFEFF/, '');
-    }
-    const cbParsed = Papa.parse(csvText, { header: true, delimiter: ';', skipEmptyLines: true, dynamicTyping: false });
+    const cbParsed = Papa.parse(rawText, { header: true, delimiter: ';', skipEmptyLines: true, dynamicTyping: false });
     let rows;
     try {
       rows = parseCentraalBeheer(cbParsed.data);
