@@ -533,7 +533,7 @@ export default function AssetDetail() {
 
       <div className="detail-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1>{asset.name}{asset.archived && <span style={{ fontSize: 13, color: 'var(--text-faint)', marginLeft: 8 }}>(archived)</span>}</h1>
+          <h1>{asset.name}{!!asset.archived && <span style={{ fontSize: 13, color: 'var(--text-faint)', marginLeft: 8 }}>(archived)</span>}</h1>
           <div className="meta">
             <span className="type-badge">{asset.type}</span>
             {' '}· {asset.currency}

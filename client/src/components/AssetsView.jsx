@@ -204,7 +204,7 @@ export default function AssetsView() {
                   <tr key={a.id}
                     className={'clickable-row' + (a.archived ? ' archived' : '')}
                     onClick={() => navigate(`/assets/${a.id}`)}>
-                    <td>{a.name}{a.archived && <span style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 6 }}>(archived)</span>}</td>
+                    <td>{a.name}{!!a.archived && <span style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 6 }}>(archived)</span>}</td>
                     <td><span className="type-badge">{a.type}</span></td>
                     <td>{a.currency}</td>
                     <td className="num">{a.current_value !== null ? fmtEur(a.current_value) : '—'}</td>
