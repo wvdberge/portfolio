@@ -16,8 +16,10 @@
 
 ### ABN AMRO savings (TAB/TXT file)
 1. Log in → Sparen → download TAB/TXT export
-2. On **first import**: you'll be asked to map each account number and fund code to an asset — create new assets as needed
+2. On **first import**: you'll be asked to map each account number and fund code to an asset. Map to the existing fund assets: 050403 → NT WLD SCR EQ IDX A, 095073 → NT EM MK SCR EQ IDX, 095274 → NT WLD SCAP LC EQ, 050395 → NT EUR SCR EQ IDX A, account number → ABN Amro Spaarrekening.
 3. On subsequent imports: mappings are saved, duplicate rows are skipped
+4. Covers fund purchases, sales, reinvestments, dividends (booked gross: net + dividendbelasting), servicekosten and interest. SEPA transfers are skipped: contributions are counted at the fund purchase.
+5. Export from 2025-01-01 onward. ABN history starts with an opening purchase per fund on 2024-12-29; earlier rows would double it.
 
 ---
 

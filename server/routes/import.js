@@ -146,22 +146,22 @@ function parseCentraalBeheer(rows) {
 
 function parseAbnSavings(rawText) {
   const lines = rawText.split('\n').filter(l => l.trim());
-  return lines.map(line => {
+  return lines.flatMap(line => {
     try {
       const cols = line.split('\t');
       if (cols.length < 8) {
-        return { status: 'error', error: `Expected 8 columns, got ${cols.length}`, _raw: line.slice(0, 80) };
+        return [{ status: 'error', error: `Expected 8 columns, got ${cols.length}`, _raw: line.slice(0, 80) }];
       }
 
       const dateRaw = cols[2].trim();
       if (!/^\d{8}$/.test(dateRaw)) {
-        return { status: 'error', error: `Invalid date: ${dateRaw}`, _raw: line.slice(0, 80) };
+        return [{ status: 'error', error: `Invalid date: ${dateRaw}`, _raw: line.slice(0, 80) }];
       }
       const date = `${dateRaw.slice(0, 4)}-${dateRaw.slice(4, 6)}-${dateRaw.slice(6, 8)}`;
 
       const signedAmount = parseDutchNumber(cols[6].trim());
       if (isNaN(signedAmount)) {
-        return { status: 'error', error: `Invalid amount: ${cols[6]}`, _raw: line.slice(0, 80) };
+        return [{ status: 'error', error: `Invalid amount: ${cols[6]}`, _raw: line.slice(0, 80) }];
       }
       const amount = Math.abs(signedAmount);
 
@@ -169,6 +169,7 @@ function parseAbnSavings(rawText) {
       const accountNum = cols[0].trim();
 
       let type, target, asset_name, external_name, quantity = null, price_per_unit = null, notes = null;
+      let grossAmount = amount;
 
       if (/^STORTING BELEG\. FONDS/.test(desc) || /^HERBELEGGING/.test(desc)) {
         type = 'buy';
@@ -192,13 +193,17 @@ function parseAbnSavings(rawText) {
         const m = desc.match(/^DIVIDEND\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
         asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
         external_name = m ? m[2] : null;
+        // Book gross (net + dividendbelasting): the tax is credited in the IB return,
+        // and the brokerage export these rows must dedupe against is gross too
         const taxMatch = desc.match(/BELASTING\s+EUR\s+([\d,.]+)/i);
-        if (taxMatch) notes = `Dividendbelasting EUR ${parseDutchNumber(taxMatch[1]).toFixed(2)} (already deducted)`;
-      } else if (/^SEPA/.test(desc)) {
-        type = signedAmount >= 0 ? 'deposit' : 'withdrawal';
-        target = 'savings';
-        asset_name = `ABN ${accountNum}`;
-        external_name = accountNum;
+        if (taxMatch) {
+          const tax = parseDutchNumber(taxMatch[1]);
+          grossAmount = Math.round((amount + tax) * 100) / 100;
+          notes = `Dividendbelasting EUR ${tax.toFixed(2)}`;
+        }
+      } else if (/^SEPA/.test(desc) || /^\/TRTP\/SEPA/.test(desc)) {
+        // Transfers from own current account; contributions are counted at the fund purchase
+        return [];
       } else if (/Servicekosten/i.test(desc)) {
         type = 'fee';
         target = 'savings';
@@ -211,10 +216,10 @@ function parseAbnSavings(rawText) {
         asset_name = `ABN ${accountNum}`;
         external_name = accountNum;
       } else {
-        return { status: 'error', error: `Unrecognised description: ${desc.slice(0, 60)}`, _raw: line.slice(0, 80) };
+        return [{ status: 'error', error: `Unrecognised description: ${desc.slice(0, 60)}`, _raw: line.slice(0, 80) }];
       }
 
-      return {
+      return [{
         status: 'ok',
         date,
         type,
@@ -224,13 +229,13 @@ function parseAbnSavings(rawText) {
         broker: 'abn_savings',
         quantity: quantity != null && !isNaN(quantity) ? quantity : null,
         price_per_unit: price_per_unit != null && !isNaN(price_per_unit) ? price_per_unit : null,
-        amount,
+        amount: grossAmount,
         fee: null,
         notes,
         asset_id: null,
-      };
+      }];
     } catch (err) {
-      return { status: 'error', error: err.message, _raw: line.slice(0, 80) };
+      return [{ status: 'error', error: err.message, _raw: line.slice(0, 80) }];
     }
   });
 }
