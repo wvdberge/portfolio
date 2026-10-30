@@ -9,6 +9,11 @@ services:
       - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-}
       - TZ=${TZ:-Europe/Amsterdam}
       - PRICE_FETCH_CRON=${PRICE_FETCH_CRON:-0 18 * * 1-5}
+    # The NAS resolves via its own DNS (192.168.1.202), which doesn't answer the
+    # Docker network; without this, price fetching fails with EAI_AGAIN
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
     restart: unless-stopped
 
 volumes:
