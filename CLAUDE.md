@@ -33,7 +33,7 @@ Deploy workflow:
 
 - `server/index.js` — Express entry point, mounts all routes under `/api`
 - `server/db.js` — **Core file**: SQLite schema (inline `CREATE TABLE IF NOT EXISTS`), all migrations, and all heavy computation functions (XIRR, asset valuation, net worth history, yearly summary). If you're touching financial logic, it lives here.
-- `server/priceFetchers.js` — Alpha Vantage, Meesman (Cheerio scrape), Brand New Day (JSON API)
+- `server/priceFetchers.js` — Alpha Vantage, Meesman (price-history xlsx from meesman.nl), Brand New Day (JSON API)
 - `server/routes/` — one file per resource; thin wrappers that call `db.js` functions
 
 ### Client

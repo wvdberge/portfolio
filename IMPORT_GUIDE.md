@@ -6,7 +6,8 @@
 1. Log in → Transacties → download CSV
 2. Upload via Import
 3. `Dividend herbelegging` rows automatically split into dividend + buy (zero net XIRR impact)
-4. `Stortingsmix` rows (no qty/price) import fine with just the amount
+4. `Stortingsmix` rows have no units in the export. If the Meesman asset has price source `meesman` (ticker `aandelen-wereldwijd-totaal`), the import derives them from Meesman's price-history xlsx: each deposit buys at the first trading price on or after its date (class A). A deposit whose trading price isn't published yet shows as an error; import again a few days later.
+5. Price refresh stores Meesman's full price history, so past values (1Y, yearly) are known. Don't add snapshots to this asset.
 
 ### Centraal Beheer (CSV)
 1. Export the account statement from the CB app (UTF-16, LE or BE; the importer handles both). The filename doesn't matter: the importer recognises the file by its header.

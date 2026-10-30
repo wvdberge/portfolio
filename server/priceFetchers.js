@@ -1,4 +1,4 @@
-const cheerio = require('cheerio');
+const AdmZip = require('adm-zip');
 
 const AV_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
@@ -27,42 +27,52 @@ const MEESMAN_FUNDS = {
   'rentefonds':                     'Rentefonds',
 };
 
-async function fetchMeesmanPrice(fundSlug) {
-  const url = `https://www.meesman.nl/onze-fondsen/${encodeURIComponent(fundSlug)}`;
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; portfolio-tracker/2b)' },
-  });
-  if (!resp.ok) throw new Error(`Meesman: HTTP ${resp.status} for fund "${fundSlug}"`);
+// Full trading-price history ("handelskoersen", ~2x a week since 2015) from the
+// xlsx linked on Meesman's fund pages. Column header = fund name; the standard
+// class has a " A" suffix where a B class exists. Dividend dates carry an extra
+// row with the dividend per unit, so per date the highest value is the price.
+const MEESMAN_HISTORY_URL = 'https://www.meesman.nl/media/k5wd2q3j/handelskoersen-vanaf-2015-01-05.xlsx';
 
-  const html = await resp.text();
+async function fetchMeesmanHistory(fundSlug) {
+  const fundName = MEESMAN_FUNDS[fundSlug];
+  if (!fundName) throw new Error(`Meesman: unknown fund "${fundSlug}"`);
+  const resp = await fetch(MEESMAN_HISTORY_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; portfolio-tracker/2b)' } });
+  if (!resp.ok) throw new Error(`Meesman history: HTTP ${resp.status}`);
+  const zip = new AdmZip(Buffer.from(await resp.arrayBuffer()));
 
-  // Try regex on full HTML body first
-  const match = html.match(/€([\d.,]+)\s*\((\d{2})-(\d{2})-(\d{4})\)/);
-  if (match) {
-    const price = parseFloat(match[1].replace(',', '.'));
-    const date = `${match[4]}-${match[3]}-${match[2]}`;
-    return { date, price };
-  }
-
-  // Cheerio fallback: try data-price attribute or text nodes near "koers"
-  const $ = cheerio.load(html);
-  let priceText = $('[data-price]').attr('data-price') || $('[data-koers]').attr('data-koers') || '';
-  if (!priceText) {
-    // Try finding a text node that contains a euro sign near a date pattern
-    $('*').each((_, el) => {
-      const text = $(el).text();
-      const m = text.match(/€([\d.,]+)\s*\((\d{2})-(\d{2})-(\d{4})\)/);
-      if (m && !priceText) {
-        priceText = m[0];
-      }
-    });
-    const m2 = priceText.match(/€([\d.,]+)\s*\((\d{2})-(\d{2})-(\d{4})\)/);
-    if (m2) {
-      return { date: `${m2[4]}-${m2[3]}-${m2[2]}`, price: parseFloat(m2[1].replace(',', '.')) };
+  const strings = [...zip.readAsText('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)]
+    .map(m => [...m[1].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join(''));
+  const rows = [...zip.readAsText('xl/worksheets/sheet1.xml').matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map(r => {
+    const cells = {};
+    for (const c of r[1].matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const v = (c[3] || '').match(/<v>([^<]*)<\/v>/);
+      if (v) cells[c[1]] = /t="s"/.test(c[2]) ? strings[+v[1]] : v[1];
     }
-  }
+    return cells;
+  });
 
-  throw new Error(`Meesman: could not parse price from page for fund "${fundSlug}"`);
+  const header = rows.find(r => r.A === 'datum');
+  if (!header) throw new Error('Meesman history: header row not found');
+  const col = Object.keys(header).find(k => header[k] === `${fundName} A`)
+    || Object.keys(header).find(k => header[k] === fundName);
+  if (!col) throw new Error(`Meesman history: no column for "${fundName}"`);
+
+  const byDate = {};
+  for (const r of rows) {
+    const serial = Number(r.A), price = Number(r[col]);
+    if (!serial || !price) continue;
+    const date = new Date(Date.UTC(1899, 11, 30) + serial * 86400000).toISOString().slice(0, 10);
+    byDate[date] = Math.max(byDate[date] || 0, price);
+  }
+  return Object.entries(byDate).map(([date, price]) => ({ date, price })).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Units bought by a Meesman deposit: executed at the first trading price on or after
+// the deposit date. Null if that price isn't published yet. Rounded to Meesman's 4 decimals.
+function meesmanUnits(netAmount, date, history) {
+  const trade = history.find(h => h.date >= date);
+  if (!trade) return null;
+  return { quantity: Math.round(netAmount / trade.price * 10000) / 10000, price: trade.price, tradeDate: trade.date };
 }
 
 // ── Brand New Day ─────────────────────────────────────────────────────────────
@@ -89,7 +99,8 @@ async function fetchBrandNewDayPrice(fundId) {
 
 module.exports = {
   fetchAlphaVantagePrice,
-  fetchMeesmanPrice,
+  fetchMeesmanHistory,
+  meesmanUnits,
   fetchBrandNewDayPrice,
   MEESMAN_FUNDS,
 };

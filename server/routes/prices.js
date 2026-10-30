@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db');
-const { fetchAlphaVantagePrice, fetchMeesmanPrice, fetchBrandNewDayPrice } = require('../priceFetchers');
+const { fetchAlphaVantagePrice, fetchMeesmanHistory, fetchBrandNewDayPrice } = require('../priceFetchers');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -15,9 +15,15 @@ function upsertPrice(assetId, date, price) {
 async function fetchForAsset(asset) {
   const { price_source, ticker } = asset;
   if (price_source === 'alpha_vantage') return fetchAlphaVantagePrice(ticker);
-  if (price_source === 'meesman')       return fetchMeesmanPrice(ticker);
+  if (price_source === 'meesman')       return (await fetchMeesmanHistory(ticker)).at(-1); // page scrape broke; history has the same latest price
   if (price_source === 'brand_new_day') return fetchBrandNewDayPrice(ticker);
   throw new Error(`No price_source set`);
+}
+
+// Meesman publishes its full price history; store it so past values (1Y, yearly) are known
+async function backfillMeesmanHistory(asset) {
+  if (asset.price_source !== 'meesman') return;
+  for (const { date, price } of await fetchMeesmanHistory(asset.ticker)) upsertPrice(asset.id, date, price);
 }
 
 // ── BND funds list (cached in-process) ───────────────────────────────────────
@@ -53,6 +59,7 @@ async function runPriceRefresh() {
 
   for (const asset of assets) {
     try {
+      await backfillMeesmanHistory(asset);
       const { price, date } = await fetchForAsset(asset);
       upsertPrice(asset.id, date, price);
       fetched++;
@@ -81,6 +88,7 @@ router.post('/refresh/:assetId', async (req, res) => {
   if (!asset.ticker) return res.status(400).json({ error: 'No ticker set on this asset' });
 
   try {
+    await backfillMeesmanHistory(asset);
     const { price, date } = await fetchForAsset(asset);
     upsertPrice(asset.id, date, price);
     res.json({ date, price });

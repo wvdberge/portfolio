@@ -8,8 +8,8 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.8.0",
-    "cheerio": "^1.2.0",
     "express": "^4.18.3",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",

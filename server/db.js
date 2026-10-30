@@ -697,7 +697,7 @@ function getYearlySummary() {
     for (const asset of assets) {
       const sv = getAssetValueAtDate(asset.id, priorEnd);
       const ev = getAssetValueAtDate(asset.id, actualEnd);
-      if (sv === null && ev === null) continue;
+      if (!sv && !ev) continue; // not held this year (null, or 0 for a priced asset bought later)
 
       const aCRow = db.prepare(`
         SELECT

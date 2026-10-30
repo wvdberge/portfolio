@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const Papa = require('papaparse');
+const { fetchMeesmanHistory, meesmanUnits } = require('../priceFetchers');
 const pdfParse = require('pdf-parse/lib/pdf-parse.js'); // lib path: the package index runs a debug self-test
 const { db } = require('../db');
 
@@ -517,6 +518,7 @@ router.post('/preview', upload.single('file'), async (req, res) => {
   }
 
   // Resolve asset_id via import_mappings or name match (Meesman)
+  const meesmanHistory = {};
   for (const row of rows) {
     if (row.status !== 'ok') continue;
     const mapping = db.prepare(
@@ -530,6 +532,28 @@ router.post('/preview', upload.single('file'), async (req, res) => {
       ).get(row.asset_name);
       if (asset) row.asset_id = asset.id;
     }
+
+    // Stortingsmix rows have no units: derive them from Meesman's price history,
+    // if the asset is a priced Meesman fund
+    if (format === 'meesman' && row.type === 'buy' && row.quantity == null && row.asset_id) {
+      const asset = db.prepare('SELECT price_source, ticker FROM assets WHERE id = ?').get(row.asset_id);
+      if (asset?.price_source === 'meesman' && asset.ticker) {
+        try {
+          meesmanHistory[asset.ticker] ??= await fetchMeesmanHistory(asset.ticker);
+        } catch (err) {
+          return res.status(502).json({ error: `Could not fetch Meesman prices: ${err.message}` });
+        }
+        const units = meesmanUnits(row.amount - (row.fee || 0), row.date, meesmanHistory[asset.ticker]);
+        if (!units) {
+          row.status = 'error';
+          row.error = 'Meesman has not published the trading price for this deposit yet; import again in a few days';
+          continue;
+        }
+        row.quantity = units.quantity;
+        row.price_per_unit = units.price;
+      }
+    }
+
     if (row.asset_id && checkDuplicate(row)) row.status = 'duplicate';
   }
 
@@ -619,7 +643,8 @@ router.post('/commit', (req, res) => {
       );
 
       // Backfill price from transaction if available (skip CA rows — Koers is dividend/unit, not NAV)
-      if (row.price_per_unit != null && !isNaN(row.price_per_unit) && row.notes !== 'CA (dividend reinvestment)') {
+      // Not for Meesman: its price is the trade date's, which can differ from the row date; the history comes from price refresh
+      if (row.price_per_unit != null && !isNaN(row.price_per_unit) && row.notes !== 'CA (dividend reinvestment)' && row.broker !== 'meesman') {
         db.prepare(`
           INSERT INTO asset_prices (asset_id, date, price) VALUES (?, ?, ?)
           ON CONFLICT(asset_id, date) DO NOTHING
