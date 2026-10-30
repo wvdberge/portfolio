@@ -2,6 +2,19 @@ import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import { fmtDate, fmtNum, today } from '../format.js';
 
+// Long synced lists stay folded until asked for
+function Collapsible({ count, label, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn btn-sm" onClick={() => setOpen(o => !o)} style={{ marginBottom: 8 }}>
+        {open ? `Hide ${label}` : `Show ${count} ${label}`}
+      </button>
+      {open && children}
+    </>
+  );
+}
+
 function BenchmarkSection() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,26 +83,28 @@ function BenchmarkSection() {
       {loading ? <div className="loading">Loading…</div> : rows.length === 0 ? (
         <div className="empty-state">No entries yet.</div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th className="num">Price</th>
-              <th className="actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id}>
-                <td>{fmtDate(r.date)}</td>
-                <td className="num">{fmtNum(r.price, 2)}</td>
-                <td className="actions">
-                  <button className="btn btn-sm btn-danger" onClick={() => del(r)}>Delete</button>
-                </td>
+        <Collapsible count={rows.length} label="MSCI World prices">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th className="num">Price</th>
+                <th className="actions"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id}>
+                  <td>{fmtDate(r.date)}</td>
+                  <td className="num">{fmtNum(r.price, 2)}</td>
+                  <td className="actions">
+                    <button className="btn btn-sm btn-danger" onClick={() => del(r)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Collapsible>
       )}
     </div>
   );
@@ -170,26 +185,28 @@ function CpiSection() {
       {loading ? <div className="loading">Loading…</div> : rows.length === 0 ? (
         <div className="empty-state">No entries yet.</div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th className="num">CPI value</th>
-              <th className="actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id}>
-                <td>{r.date.slice(0, 7)}</td>
-                <td className="num">{fmtNum(r.cpi_value, 1)}</td>
-                <td className="actions">
-                  <button className="btn btn-sm btn-danger" onClick={() => del(r)}>Delete</button>
-                </td>
+        <Collapsible count={rows.length} label="CPI values">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th className="num">CPI value</th>
+                <th className="actions"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id}>
+                  <td>{r.date.slice(0, 7)}</td>
+                  <td className="num">{fmtNum(r.cpi_value, 1)}</td>
+                  <td className="actions">
+                    <button className="btn btn-sm btn-danger" onClick={() => del(r)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Collapsible>
       )}
     </div>
   );

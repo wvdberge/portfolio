@@ -191,6 +191,7 @@ export default function Dashboard() {
   const [msci3y, setMsci3y] = useState(undefined);
   const [msciAll, setMsciAll] = useState(undefined);
   const [realAll, setRealAll] = useState(undefined);
+  const [realAllExHouse, setRealAllExHouse] = useState(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -213,8 +214,14 @@ export default function Dashboard() {
     api.portfolio.xirr('3y').then(r => setXirr3y(r.xirr)).catch(() => setXirr3y(null));
     api.portfolio.xirr('all').then(r => {
       setXirrAll(r.xirr);
-      setRealAll(null); // will be set by yearly-summary if needed
     }).catch(() => setXirrAll(null));
+
+    // All-time real return = all-time XIRR minus annualised CPI, computed in the yearly summary (in %)
+    api.portfolio.yearlySummary().then(d => {
+      const all = d.portfolio.find(r => r.year === 'all');
+      setRealAll(all?.real_return_pct != null ? all.real_return_pct / 100 : null);
+      setRealAllExHouse(all?.real_ex_re_pct != null ? all.real_ex_re_pct / 100 : null);
+    }).catch(() => { setRealAll(null); setRealAllExHouse(null); });
 
     api.benchmark.getReturn(str1y, todayStr).then(r => setMsci1y(r.return)).catch(() => setMsci1y(null));
     api.benchmark.getReturn(str3y, todayStr).then(r => setMsci3y(r.return)).catch(() => setMsci3y(null));
@@ -255,7 +262,7 @@ export default function Dashboard() {
           <ReturnBox label="1-Year (XIRR)" value={toPercent(xirr1y)} exHouse={toPercent(exHouse['1y'])} msci={toPercent(msci1y)} loading={xirr1y === undefined} />
           <ReturnBox label="3-Year (XIRR)" value={toPercent(xirr3y)} exHouse={toPercent(exHouse['3y'])} msci={toPercent(msci3y)} loading={xirr3y === undefined} />
           <ReturnBox label="All-Time (XIRR)" value={toPercent(xirrAll)} exHouse={toPercent(exHouse['all'])} msci={toPercent(msciAll)} loading={xirrAll === undefined} />
-          <ReturnBox label="Real Return (All-Time)" value={toPercent(realAll)} loading={realAll === undefined} />
+          <ReturnBox label="Real Return (All-Time)" value={toPercent(realAll)} exHouse={toPercent(realAllExHouse)} loading={realAll === undefined} />
         </div>
       </div>
 
