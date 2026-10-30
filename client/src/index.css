@@ -20,6 +20,31 @@
   --radius:      6px;
 }
 
+/* Light theme: toggled from the nav, stored in localStorage ('theme') */
+:root[data-theme="light"] {
+  --bg:          #f5f6f8;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #eef0f3;
+  --bg-input:    #ffffff;
+  --border:      #d9dce1;
+  --border-light:#e3e6ea;
+  --text:        #1f2328;
+  --text-muted:  #5f6670;
+  --text-faint:  #9aa0a8;
+  --accent:      #1a73e8;
+  --accent-dim:  #dbe8fb;
+  --positive:    #1e8a52;
+  --negative:    #c93c3c;
+  --neutral:     #5f6670;
+  --warn:        #b06f12;
+}
+:root[data-theme="light"] .btn-danger:hover { background: #fbe5e5; }
+:root[data-theme="light"] .drift-warn { background: #fdf0dc; }
+:root[data-theme="light"] .banner-ok   { background: #e3f4ea; border-color: #a9d9bb; }
+:root[data-theme="light"] .banner-warn { background: #fdf0dc; border-color: #ecc98b; }
+:root[data-theme="light"] .banner-err  { background: #fbe5e5; border-color: #e8aaaa; }
+.theme-toggle { margin-left: auto; }
+
 html, body, #root { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.5; }
 
 /* ── Layout ─────────────────────────────────────────────────────────────────*/
