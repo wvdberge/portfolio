@@ -9,13 +9,14 @@ const {
   getYearlySummary,
 } = require('../db');
 
-// GET /api/portfolio/xirr?period=1y|3y|all
+// GET /api/portfolio/xirr?period=1y|3y|all[&exclude=real_estate]
 router.get('/xirr', (req, res) => {
   const period = req.query.period || 'all';
   if (!['1y', '3y', 'all'].includes(period)) {
     return res.status(400).json({ error: 'period must be 1y, 3y, or all' });
   }
-  const rate = getPortfolioXirr(period);
+  const excludeTypes = req.query.exclude ? String(req.query.exclude).split(',') : [];
+  const rate = getPortfolioXirr(period, excludeTypes);
   res.json({ xirr: rate });
 });
 

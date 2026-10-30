@@ -35,7 +35,7 @@ function fmtPct(v) {
 
 // ── Return stat box ───────────────────────────────────────────────────────────
 
-function ReturnBox({ label, value, msci, loading }) {
+function ReturnBox({ label, value, exHouse, msci, loading }) {
   return (
     <div className="stat-box">
       <div className="stat-box-label">{label}</div>
@@ -46,6 +46,9 @@ function ReturnBox({ label, value, msci, loading }) {
           <div className="stat-box-value" style={{ color: value === null ? 'var(--text-muted)' : value >= 0 ? 'var(--green)' : 'var(--red)' }}>
             {value !== null ? fmtPct(value) : '—'}
           </div>
+          {exHouse !== undefined && (
+            <div className="stat-box-sub">Excl. woning: {exHouse !== null ? fmtPct(exHouse) : '—'}</div>
+          )}
           {msci !== undefined && (
             <div className="stat-box-sub">MSCI World: {msci !== null ? fmtPct(msci) : '—'}</div>
           )}
@@ -183,6 +186,7 @@ export default function Dashboard() {
   const [xirr1y, setXirr1y] = useState(undefined);
   const [xirr3y, setXirr3y] = useState(undefined);
   const [xirrAll, setXirrAll] = useState(undefined);
+  const [exHouse, setExHouse] = useState({}); // period -> XIRR without real estate
   const [msci1y, setMsci1y] = useState(undefined);
   const [msci3y, setMsci3y] = useState(undefined);
   const [msciAll, setMsciAll] = useState(undefined);
@@ -200,6 +204,11 @@ export default function Dashboard() {
     const str1y = date1y.toISOString().slice(0, 10);
     const str3y = date3y.toISOString().slice(0, 10);
 
+    for (const p of ['1y', '3y', 'all']) {
+      api.portfolio.xirr(p, 'real_estate')
+        .then(r => setExHouse(s => ({ ...s, [p]: r.xirr })))
+        .catch(() => setExHouse(s => ({ ...s, [p]: null })));
+    }
     api.portfolio.xirr('1y').then(r => setXirr1y(r.xirr)).catch(() => setXirr1y(null));
     api.portfolio.xirr('3y').then(r => setXirr3y(r.xirr)).catch(() => setXirr3y(null));
     api.portfolio.xirr('all').then(r => {
@@ -243,9 +252,9 @@ export default function Dashboard() {
       <div className="section">
         <div className="section-header"><h2>Returns</h2></div>
         <div className="stat-row">
-          <ReturnBox label="1-Year (XIRR)" value={toPercent(xirr1y)} msci={toPercent(msci1y)} loading={xirr1y === undefined} />
-          <ReturnBox label="3-Year (XIRR)" value={toPercent(xirr3y)} msci={toPercent(msci3y)} loading={xirr3y === undefined} />
-          <ReturnBox label="All-Time (XIRR)" value={toPercent(xirrAll)} msci={toPercent(msciAll)} loading={xirrAll === undefined} />
+          <ReturnBox label="1-Year (XIRR)" value={toPercent(xirr1y)} exHouse={toPercent(exHouse['1y'])} msci={toPercent(msci1y)} loading={xirr1y === undefined} />
+          <ReturnBox label="3-Year (XIRR)" value={toPercent(xirr3y)} exHouse={toPercent(exHouse['3y'])} msci={toPercent(msci3y)} loading={xirr3y === undefined} />
+          <ReturnBox label="All-Time (XIRR)" value={toPercent(xirrAll)} exHouse={toPercent(exHouse['all'])} msci={toPercent(msciAll)} loading={xirrAll === undefined} />
           <ReturnBox label="Real Return (All-Time)" value={toPercent(realAll)} loading={realAll === undefined} />
         </div>
       </div>

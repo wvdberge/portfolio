@@ -79,7 +79,7 @@ export const api = {
   },
 
   portfolio: {
-    xirr: (period = 'all') => req('GET', `/api/portfolio/xirr?period=${period}`),
+    xirr: (period = 'all', exclude) => req('GET', `/api/portfolio/xirr?period=${period}${exclude ? `&exclude=${exclude}` : ''}`),
     history: () => req('GET', '/api/portfolio/history'),
     contributionsVsGrowth: () => req('GET', '/api/portfolio/contributions-vs-growth'),
     yearlySummary: () => req('GET', '/api/portfolio/yearly-summary'),

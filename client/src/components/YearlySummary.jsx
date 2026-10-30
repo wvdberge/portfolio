@@ -28,6 +28,8 @@ function PortfolioTable({ rows }) {
           <th className="num">End NW</th>
           <th className="num">Nominal %</th>
           <th className="num">Real %</th>
+          <th className="num">Excl. woning %</th>
+          <th className="num">Excl. woning real %</th>
           <th className="num">MSCI World %</th>
         </tr>
       </thead>
@@ -41,6 +43,8 @@ function PortfolioTable({ rows }) {
             <td className="num">{fmtEur(r.end_net_worth)}</td>
             <td className={`num ${pctClass(r.nominal_return_pct)}`}>{fmtPct(r.nominal_return_pct)}</td>
             <td className={`num ${pctClass(r.real_return_pct)}`}>{fmtPct(r.real_return_pct)}</td>
+            <td className={`num ${pctClass(r.nominal_ex_re_pct)}`}>{fmtPct(r.nominal_ex_re_pct)}</td>
+            <td className={`num ${pctClass(r.real_ex_re_pct)}`}>{fmtPct(r.real_ex_re_pct)}</td>
             <td className={`num ${pctClass(r.msci_world_pct)}`}>{fmtPct(r.msci_world_pct)}</td>
           </tr>
         ))}

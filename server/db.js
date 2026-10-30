@@ -290,15 +290,20 @@ function isUnvalued(assetId, dateStr) {
   return !!db.prepare('SELECT 1 FROM transactions WHERE asset_id = ? AND date <= ? LIMIT 1').get(assetId, dateStr);
 }
 
-function anyUnvalued(dateStr) {
-  return db.prepare('SELECT id FROM assets WHERE archived = 0').all().some(a => isUnvalued(a.id, dateStr));
+// excludeTypes: asset types left out, e.g. ['real_estate'] for returns without the house
+function activeAssets(excludeTypes = []) {
+  return db.prepare('SELECT id, type FROM assets WHERE archived = 0').all().filter(a => !excludeTypes.includes(a.type));
+}
+
+function anyUnvalued(dateStr, excludeTypes = []) {
+  return activeAssets(excludeTypes).some(a => isUnvalued(a.id, dateStr));
 }
 
 // Investment value for XIRR: assets only. Liabilities have no recorded cash flows
 // (repayments aren't booked), so subtracting them would show as a loss.
-function getAssetsValueAtDate(dateStr) {
+function getAssetsValueAtDate(dateStr, excludeTypes = []) {
   let total = 0;
-  for (const a of db.prepare('SELECT id FROM assets WHERE archived = 0').all()) {
+  for (const a of activeAssets(excludeTypes)) {
     const v = getAssetValueAtDate(a.id, dateStr);
     if (v !== null) total += v;
   }
@@ -470,7 +475,24 @@ function getAssetXirr(assetId, period = 'all') {
   return xirr(cfs);
 }
 
-function getPortfolioXirr(period = 'all') {
+// Archived assets included: their past cash flows still belong to the return
+function assetIdsForXirr(excludeTypes = []) {
+  return db.prepare('SELECT id, type FROM assets').all().filter(a => !excludeTypes.includes(a.type)).map(a => a.id);
+}
+
+// Portfolio XIRR over one calendar-year window (start = prior year end)
+function portfolioXirrBetween(fromStr, toStr, excludeTypes = []) {
+  if (anyUnvalued(fromStr, excludeTypes) || anyUnvalued(toStr, excludeTypes)) return null;
+  const cfs = [];
+  const startVal = getAssetsValueAtDate(fromStr, excludeTypes);
+  if (startVal > 0) cfs.push({ date: parseDate(fromStr), amount: -startVal });
+  cfs.push(...buildCashflows(assetIdsForXirr(excludeTypes), fromStr, toStr));
+  cfs.push({ date: parseDate(toStr), amount: getAssetsValueAtDate(toStr, excludeTypes) });
+  cfs.sort((a, b) => a.date - b.date);
+  return xirr(cfs);
+}
+
+function getPortfolioXirr(period = 'all', excludeTypes = []) {
   const today = todayStr();
   let periodStart = null;
 
@@ -485,15 +507,14 @@ function getPortfolioXirr(period = 'all') {
   const cfs = [];
 
   if (periodStart) {
-    if (anyUnvalued(periodStart)) return null;
-    const openVal = getAssetsValueAtDate(periodStart);
+    if (anyUnvalued(periodStart, excludeTypes)) return null;
+    const openVal = getAssetsValueAtDate(periodStart, excludeTypes);
     if (openVal > 0) cfs.push({ date: parseDate(periodStart), amount: -openVal });
   }
 
-  const allAssetIds = db.prepare('SELECT id FROM assets').all().map(a => a.id);
-  cfs.push(...buildCashflows(allAssetIds, periodStart, today));
+  cfs.push(...buildCashflows(assetIdsForXirr(excludeTypes), periodStart, today));
 
-  cfs.push({ date: parseDate(today), amount: getAssetsValueAtDate(today) });
+  cfs.push({ date: parseDate(today), amount: getAssetsValueAtDate(today, excludeTypes) });
 
   if (cfs.length < 2) return null;
   cfs.sort((a, b) => a.date - b.date);
@@ -644,7 +665,6 @@ function getYearlySummary() {
   const today = todayStr();
 
   const assets = db.prepare('SELECT * FROM assets WHERE archived = 0').all();
-  const allAssetIds = db.prepare('SELECT id FROM assets').all().map(a => a.id);
 
   const portfolioRows = [];
   const byAssetRows = [];
@@ -669,14 +689,9 @@ function getYearlySummary() {
     allTimeContributions += contributions;
     const growth = endNW - startNW - contributions;
 
-    // Portfolio XIRR for this year
-    const yearCfs = [];
-    const startInv = getAssetsValueAtDate(priorEnd);
-    if (startInv > 0) yearCfs.push({ date: parseDate(priorEnd), amount: -startInv });
-    yearCfs.push(...buildCashflows(allAssetIds, priorEnd, actualEnd));
-    yearCfs.push({ date: parseDate(actualEnd), amount: getAssetsValueAtDate(actualEnd) });
-    yearCfs.sort((a, b) => a.date - b.date);
-    const nominalReturn = (anyUnvalued(priorEnd) || anyUnvalued(actualEnd)) ? null : xirr(yearCfs);
+    // Portfolio XIRR for this year, with and without real estate
+    const nominalReturn = portfolioXirrBetween(priorEnd, actualEnd);
+    const nominalExRe = portfolioXirrBetween(priorEnd, actualEnd, ['real_estate']);
 
     const msciReturn = getBenchmarkReturn(priorEnd, actualEnd);
     const realReturn = getRealReturn(nominalReturn, priorEnd, actualEnd);
@@ -690,6 +705,8 @@ function getYearlySummary() {
       nominal_return_pct: nominalReturn !== null ? nominalReturn * 100 : null,
       real_return_pct: realReturn !== null ? realReturn * 100 : null,
       msci_world_pct: msciReturn !== null ? msciReturn * 100 : null,
+      nominal_ex_re_pct: nominalExRe !== null ? nominalExRe * 100 : null,
+      real_ex_re_pct: (r => r !== null ? r * 100 : null)(getRealReturn(nominalExRe, priorEnd, actualEnd)),
     });
 
     // Per-asset rows
@@ -735,6 +752,7 @@ function getYearlySummary() {
   const allStartNW = portfolioRows[0]?.start_net_worth ?? 0;
   const allEndNW = portfolioRows[portfolioRows.length - 1]?.end_net_worth ?? 0;
   const allNominal = getPortfolioXirr('all');
+  const allNominalExRe = getPortfolioXirr('all', ['real_estate']);
   const allFirstPriorEnd = firstYear > 0 ? `${firstYear - 1}-12-31` : null;
   const allMsci = allFirstPriorEnd ? getBenchmarkReturn(allFirstPriorEnd, today) : null;
   const allReal = allFirstPriorEnd ? getRealReturn(allNominal, allFirstPriorEnd, today) : null;
@@ -748,6 +766,8 @@ function getYearlySummary() {
     nominal_return_pct: allNominal !== null ? allNominal * 100 : null,
     real_return_pct: allReal !== null ? allReal * 100 : null,
     msci_world_pct: allMsci !== null ? allMsci * 100 : null,
+    nominal_ex_re_pct: allNominalExRe !== null ? allNominalExRe * 100 : null,
+    real_ex_re_pct: (r => r !== null ? r * 100 : null)(allFirstPriorEnd ? getRealReturn(allNominalExRe, allFirstPriorEnd, today) : null),
   });
 
   // Add subtotal rows per type per year
