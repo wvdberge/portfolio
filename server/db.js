@@ -294,6 +294,17 @@ function anyUnvalued(dateStr) {
   return db.prepare('SELECT id FROM assets WHERE archived = 0').all().some(a => isUnvalued(a.id, dateStr));
 }
 
+// Investment value for XIRR: assets only. Liabilities have no recorded cash flows
+// (repayments aren't booked), so subtracting them would show as a loss.
+function getAssetsValueAtDate(dateStr) {
+  let total = 0;
+  for (const a of db.prepare('SELECT id FROM assets WHERE archived = 0').all()) {
+    const v = getAssetValueAtDate(a.id, dateStr);
+    if (v !== null) total += v;
+  }
+  return total;
+}
+
 function getNetWorthAtDate(dateStr) {
   const assets = db.prepare('SELECT id FROM assets WHERE archived = 0').all();
   let total = 0;
@@ -319,6 +330,11 @@ function getNetWorthAtDate(dateStr) {
  * @returns {number|null} annualized rate or null on failure
  */
 function xirr(cashflows) {
+  const r = xirrRaw(cashflows);
+  return r !== null && Math.abs(r) < 1e-9 ? 0 : r; // no "-0.00%" from solver noise
+}
+
+function xirrRaw(cashflows) {
   if (!cashflows || cashflows.length < 2) return null;
   if (!cashflows.some(cf => cf.amount < 0)) return null;
   if (!cashflows.some(cf => cf.amount > 0)) return null;
@@ -403,6 +419,18 @@ function buildCashflows(assetIds, fromDateStr, toDateStr) {
       const isOut = tx.type === 'buy' || tx.type === 'deposit' || tx.type === 'fee';
       cfs.push({ date: parseDate(tx.date), amount: isOut ? -tx.amount : tx.amount });
     }
+
+    // Asset tracked only by snapshots (house, Raisin): its first snapshot is the
+    // contribution, so later value changes count as return, not the whole value
+    const contributed = db.prepare(
+      "SELECT 1 FROM transactions WHERE asset_id = ? AND type IN ('buy','deposit') LIMIT 1"
+    ).get(assetId);
+    if (!contributed) {
+      const first = db.prepare('SELECT date, value FROM snapshots WHERE asset_id = ? ORDER BY date LIMIT 1').get(assetId);
+      if (first && first.value > 0 && (!fromDateStr || first.date > fromDateStr) && first.date <= toDateStr) {
+        cfs.push({ date: parseDate(first.date), amount: -first.value });
+      }
+    }
   }
   return cfs;
 }
@@ -457,15 +485,14 @@ function getPortfolioXirr(period = 'all') {
 
   if (periodStart) {
     if (anyUnvalued(periodStart)) return null;
-    const openNW = getNetWorthAtDate(periodStart);
-    if (openNW > 0) cfs.push({ date: parseDate(periodStart), amount: -openNW });
+    const openVal = getAssetsValueAtDate(periodStart);
+    if (openVal > 0) cfs.push({ date: parseDate(periodStart), amount: -openVal });
   }
 
   const allAssetIds = db.prepare('SELECT id FROM assets').all().map(a => a.id);
   cfs.push(...buildCashflows(allAssetIds, periodStart, today));
 
-  const nw = getNetWorth();
-  cfs.push({ date: parseDate(today), amount: nw });
+  cfs.push({ date: parseDate(today), amount: getAssetsValueAtDate(today) });
 
   if (cfs.length < 2) return null;
   cfs.sort((a, b) => a.date - b.date);
@@ -643,9 +670,10 @@ function getYearlySummary() {
 
     // Portfolio XIRR for this year
     const yearCfs = [];
-    if (startNW > 0) yearCfs.push({ date: parseDate(priorEnd), amount: -startNW });
+    const startInv = getAssetsValueAtDate(priorEnd);
+    if (startInv > 0) yearCfs.push({ date: parseDate(priorEnd), amount: -startInv });
     yearCfs.push(...buildCashflows(allAssetIds, priorEnd, actualEnd));
-    yearCfs.push({ date: parseDate(actualEnd), amount: endNW });
+    yearCfs.push({ date: parseDate(actualEnd), amount: getAssetsValueAtDate(actualEnd) });
     yearCfs.sort((a, b) => a.date - b.date);
     const nominalReturn = (anyUnvalued(priorEnd) || anyUnvalued(actualEnd)) ? null : xirr(yearCfs);
 
