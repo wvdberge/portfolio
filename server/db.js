@@ -389,11 +389,17 @@ function xirr(cashflows) {
 function buildCashflows(assetIds, fromDateStr, toDateStr) {
   const cfs = [];
   for (const assetId of assetIds) {
+    // A savings account valued from its transactions already holds its interest;
+    // counting it as a payout too would double it. With a snapshot, interest is paid out.
+    const asset = db.prepare('SELECT type FROM assets WHERE id = ?').get(assetId);
+    const hasSnapshot = db.prepare('SELECT 1 FROM snapshots WHERE asset_id = ? LIMIT 1').get(assetId);
+    const interestInside = asset?.type === 'savings' && !hasSnapshot;
     const query = fromDateStr
       ? 'SELECT date, type, amount FROM transactions WHERE asset_id = ? AND date > ? AND date <= ? ORDER BY date'
       : 'SELECT date, type, amount FROM transactions WHERE asset_id = ? AND date <= ? ORDER BY date';
     const params = fromDateStr ? [assetId, fromDateStr, toDateStr] : [assetId, toDateStr];
     for (const tx of db.prepare(query).all(...params)) {
+      if (tx.type === 'interest' && interestInside) continue;
       const isOut = tx.type === 'buy' || tx.type === 'deposit' || tx.type === 'fee';
       cfs.push({ date: parseDate(tx.date), amount: isOut ? -tx.amount : tx.amount });
     }

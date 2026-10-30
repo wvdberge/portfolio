@@ -18,8 +18,9 @@
 1. Log in → Sparen → download TAB/TXT export
 2. On **first import**: you'll be asked to map each account number and fund code to an asset. Map to the existing fund assets: 050403 → NT WLD SCR EQ IDX A, 095073 → NT EM MK SCR EQ IDX, 095274 → NT WLD SCAP LC EQ, 050395 → NT EUR SCR EQ IDX A, account number → ABN Amro Spaarrekening.
 3. On subsequent imports: mappings are saved, duplicate rows are skipped
-4. Covers fund purchases, sales, reinvestments, dividends (booked gross: net + dividendbelasting), servicekosten and interest. SEPA transfers are skipped: contributions are counted at the fund purchase.
-5. Export from 2025-01-01 onward. ABN history starts with an opening purchase per fund on 2024-12-29; earlier rows would double it.
+4. Covers fund purchases, sales, reinvestments, dividends (booked gross: net + dividendbelasting), servicekosten and interest. Servicekosten use their own mapping key `servicekosten` (mapped to NT WLD SCR EQ IDX A).
+5. The account's value comes from the TAB, not from snapshots: SEPA transfers are deposits/withdrawals, and fund purchases, sales and servicekosten also get a cash leg on the account. The computed balance matches the TAB's own balance column, apart from a few days between a dividend and its reinvestment. Don't add snapshots to this account: a snapshot switches it back to snapshot valuation and makes interest count as paid out.
+6. Export from 2025-01-01 onward. ABN history starts with an opening purchase per fund on 2024-12-29; earlier rows would double it.
 
 ---
 

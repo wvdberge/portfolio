@@ -170,10 +170,15 @@ function parseAbnSavings(rawText) {
 
       let type, target, asset_name, external_name, quantity = null, price_per_unit = null, notes = null;
       let grossAmount = amount;
+      // Cash leg on the account for fund purchases, sales and fees, so the account
+      // balance follows the TAB. Dividends and herbeleggingen pass through within
+      // days and net to zero, so they get no cash leg.
+      let mirrorType = null;
 
       if (/^STORTING BELEG\. FONDS/.test(desc) || /^HERBELEGGING/.test(desc)) {
         type = 'buy';
         target = 'fund';
+        if (/^STORTING/.test(desc)) mirrorType = 'withdrawal';
         const m = desc.match(/^(?:STORTING BELEG\. FONDS|HERBELEGGING)\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
         asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
         external_name = m ? m[2] : null;
@@ -182,6 +187,7 @@ function parseAbnSavings(rawText) {
       } else if (/^OPNAME BELEG\. FONDS/.test(desc)) {
         type = 'sell';
         target = 'fund';
+        mirrorType = 'deposit';
         const m = desc.match(/^OPNAME BELEG\. FONDS\s+(.*?)\s+FONDSCODE\s+(\d+)/i);
         asset_name = m ? m[1].trim() : desc.slice(0, 40).trim();
         external_name = m ? m[2] : null;
@@ -202,8 +208,11 @@ function parseAbnSavings(rawText) {
           notes = `Dividendbelasting EUR ${tax.toFixed(2)}`;
         }
       } else if (/^SEPA/.test(desc) || /^\/TRTP\/SEPA/.test(desc)) {
-        // Transfers from own current account; contributions are counted at the fund purchase
-        return [];
+        // Transfers from/to own current account: the actual contributions
+        type = signedAmount >= 0 ? 'deposit' : 'withdrawal';
+        target = 'savings';
+        asset_name = `ABN ${accountNum}`;
+        external_name = accountNum;
       } else if (/Servicekosten/i.test(desc) || /^ABNAMRO BELEGGEN/i.test(desc)) {
         // Since mid-2026 ABN drops the word "Servicekosten": "ABNAMRO Beleggen Zie uw nota voor details"
         // Fund costs, not savings costs: own mapping key so they can go to a fund asset
@@ -212,6 +221,7 @@ function parseAbnSavings(rawText) {
         asset_name = 'ABN AMRO servicekosten';
         external_name = 'servicekosten';
         notes = 'ABN AMRO servicekosten';
+        mirrorType = 'withdrawal';
       } else if (/^RENTE EN\/OF KOSTEN/.test(desc)) {
         type = 'interest';
         target = 'savings';
@@ -221,7 +231,7 @@ function parseAbnSavings(rawText) {
         return [{ status: 'error', error: `Unrecognised description: ${desc.slice(0, 60)}`, _raw: line.slice(0, 80) }];
       }
 
-      return [{
+      const rows = [{
         status: 'ok',
         date,
         type,
@@ -236,6 +246,24 @@ function parseAbnSavings(rawText) {
         notes,
         asset_id: null,
       }];
+      if (mirrorType) {
+        rows.push({
+          status: 'ok',
+          date,
+          type: mirrorType,
+          target: 'savings',
+          asset_name: `ABN ${accountNum}`,
+          external_name: accountNum,
+          broker: 'abn_savings',
+          quantity: null,
+          price_per_unit: null,
+          amount,
+          fee: null,
+          notes: type === 'fee' ? 'Servicekosten' : `${type === 'buy' ? 'Aankoop' : 'Verkoop'} ${asset_name}`,
+          asset_id: null,
+        });
+      }
+      return rows;
     } catch (err) {
       return [{ status: 'error', error: err.message, _raw: line.slice(0, 80) }];
     }
@@ -268,17 +296,30 @@ function detectFormat(filename, headers) {
   return null;
 }
 
-function checkDuplicate(row) {
-  if (!row.asset_id) return false;
-  const existing = db.prepare(`
-    SELECT id FROM transactions
+function countMatches(row) {
+  return db.prepare(`
+    SELECT COUNT(*) AS n FROM transactions
     WHERE asset_id = ? AND date = ? AND type = ? AND ABS(amount - ?) < 0.005
     ${row.quantity != null ? 'AND (quantity IS NULL OR ABS(quantity - ?) < 0.000001)' : ''}
   `).get(
     row.asset_id, row.date, row.type, row.amount,
     ...(row.quantity != null ? [row.quantity] : [])
-  );
-  return !!existing;
+  ).n;
+}
+
+// Per-request duplicate check. Identical rows in one file (e.g. two €300 transfers on
+// one day) are both real: the n-th occurrence is a duplicate only if the DB already
+// held at least n matching rows before this request touched that key.
+function makeDuplicateChecker() {
+  const seen = new Map();
+  return row => {
+    if (!row.asset_id) return false;
+    const key = [row.asset_id, row.date, row.type, Number(row.amount).toFixed(2), row.quantity ?? ''].join('|');
+    if (!seen.has(key)) seen.set(key, { inDb: countMatches(row), n: 0 });
+    const s = seen.get(key);
+    s.n++;
+    return s.n <= s.inDb;
+  };
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -295,6 +336,7 @@ router.get('/mappings', (req, res) => {
 // POST /api/import/preview
 router.post('/preview', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const checkDuplicate = makeDuplicateChecker();
 
   const rawText = decodeBuffer(req.file.buffer);
   const filename = req.file.originalname || '';
@@ -414,13 +456,15 @@ router.post('/preview', upload.single('file'), (req, res) => {
 router.post('/commit', (req, res) => {
   const { rows, mappings = {} } = req.body;
   if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows array required' });
+  const checkDuplicate = makeDuplicateChecker();
 
   let imported = 0, skipped = 0, caCount = 0;
   const errors = [];
   const newAssetCache = {};
 
   for (const row of rows) {
-    if (row.status === 'skip' || row.status === 'duplicate') { skipped++; continue; }
+    if (row.status === 'duplicate') { checkDuplicate(row); skipped++; continue; } // keeps the occurrence count in step
+    if (row.status === 'skip') { skipped++; continue; }
     if (row.status === 'error') { errors.push({ row, reason: row.error }); continue; }
 
     // Resolve asset_id for ABN Savings
