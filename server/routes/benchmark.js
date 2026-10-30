@@ -1,6 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { db, getBenchmarkReturn } = require('../db');
+const { fetchAlphaVantageMonthly } = require('../priceFetchers');
+
+// MSCI World benchmark: iShares Core MSCI World (IWDA) in EUR on Euronext Amsterdam.
+// Accumulating, so its price tracks the index's net total return minus 0.20% TER.
+const BENCHMARK_SYMBOL = process.env.BENCHMARK_SYMBOL || 'IWDA.AMS';
+
+async function syncBenchmark() {
+  const rows = await fetchAlphaVantageMonthly(BENCHMARK_SYMBOL);
+  const upsert = db.prepare('INSERT INTO benchmark_prices (date, price) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET price = excluded.price');
+  db.transaction(() => { for (const r of rows) upsert.run(r.date, r.price); })();
+  return { symbol: BENCHMARK_SYMBOL, count: rows.length, first: rows[0], latest: rows[rows.length - 1] };
+}
+
+// POST /api/benchmark/sync — before /:id
+router.post('/sync', async (req, res) => {
+  try {
+    res.json(await syncBenchmark());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 // GET /api/benchmark/return?from=YYYY-MM-DD&to=YYYY-MM-DD — before /:id
 router.get('/return', (req, res) => {
@@ -38,3 +59,4 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.syncBenchmark = syncBenchmark;

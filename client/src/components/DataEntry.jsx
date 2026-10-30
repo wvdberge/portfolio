@@ -9,10 +9,21 @@ function BenchmarkSection() {
   const [price, setPrice] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   function load() {
     setLoading(true);
     api.benchmark.list().then(setRows).finally(() => setLoading(false));
+  }
+
+  async function sync() {
+    setSyncing(true); setErr(''); setSyncMsg('');
+    try {
+      const { symbol, count, latest } = await api.benchmark.sync();
+      setSyncMsg(`${count} months of ${symbol}, latest ${latest.date}`);
+      load();
+    } catch (e) { setErr(e.message); } finally { setSyncing(false); }
   }
   useEffect(load, []);
 
@@ -36,7 +47,9 @@ function BenchmarkSection() {
     <div className="section">
       <div className="section-header">
         <h2>MSCI World Prices</h2>
+        <button className="btn" onClick={sync} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync from Alpha Vantage'}</button>
       </div>
+      {syncMsg && <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>{syncMsg}</div>}
 
       <form onSubmit={submit} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16 }}>
         <div style={{ flex: 1 }}>

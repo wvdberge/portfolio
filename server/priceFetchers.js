@@ -18,6 +18,20 @@ async function fetchAlphaVantagePrice(ticker) {
   };
 }
 
+// Monthly closes, oldest first. Free tier: 25 requests/day, 1 per second.
+async function fetchAlphaVantageMonthly(symbol) {
+  if (!AV_KEY) throw new Error('ALPHA_VANTAGE_API_KEY not set');
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_MONTHLY&symbol=${encodeURIComponent(symbol)}&apikey=${AV_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Alpha Vantage: HTTP ${resp.status}`);
+  const data = await resp.json();
+  const series = data['Monthly Time Series'];
+  if (!series) throw new Error(`Alpha Vantage: ${data['Error Message'] || data.Information || data.Note || 'no monthly series'}`.slice(0, 200));
+  return Object.entries(series)
+    .map(([date, v]) => ({ date, price: parseFloat(v['4. close']) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // ── Meesman ───────────────────────────────────────────────────────────────────
 
 const MEESMAN_FUNDS = {
@@ -116,6 +130,7 @@ async function fetchBrandNewDayPrice(fundId) {
 
 module.exports = {
   fetchAlphaVantagePrice,
+  fetchAlphaVantageMonthly,
   fetchMeesmanHistory,
   meesmanUnits,
   fetchCbsCpi,

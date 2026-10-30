@@ -67,6 +67,7 @@ export const api = {
   benchmark: {
     list: () => req('GET', '/api/benchmark'),
     create: (data) => req('POST', '/api/benchmark', data),
+    sync: () => req('POST', '/api/benchmark/sync'),
     delete: (id) => req('DELETE', `/api/benchmark/${id}`),
     getReturn: (from, to) => req('GET', `/api/benchmark/return?from=${from}&to=${to}`),
   },

@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { runPriceRefresh } = require('./routes/prices');
 const { syncCpi } = require('./routes/cpi');
+const { syncBenchmark } = require('./routes/benchmark');
 
 // Default: 18:00 Mon-Fri. Override via PRICE_FETCH_CRON env var.
 // TZ is controlled by the process environment (set TZ=Europe/Amsterdam in docker-compose).
@@ -25,6 +26,13 @@ cron.schedule(schedule, async () => {
     console.log(`[scheduler] CPI synced — ${count} months, latest ${latest.date}`);
   } catch (err) {
     console.warn(`[scheduler] CPI sync failed: ${err.message}`);
+  }
+  try {
+    await new Promise(r => setTimeout(r, 2000)); // Alpha Vantage free tier: max 1 request per second
+    const { symbol, count, latest } = await syncBenchmark();
+    console.log(`[scheduler] Benchmark ${symbol} synced — ${count} months, latest ${latest.date}`);
+  } catch (err) {
+    console.warn(`[scheduler] Benchmark sync failed: ${err.message}`);
   }
 });
 
