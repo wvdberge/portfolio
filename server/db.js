@@ -147,6 +147,10 @@ function getNetHoldings(assetId) {
   return result ? result.holdings : 0;
 }
 
+function isSnapshotOnly(asset) {
+  return ['real_estate', 'other'].includes(asset.type) || (asset.type === 'pension' && !asset.price_source);
+}
+
 function getAssetCurrentValue(assetId) {
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId);
   if (!asset) return null;
@@ -155,13 +159,13 @@ function getAssetCurrentValue(assetId) {
     'SELECT date, value FROM snapshots WHERE asset_id = ? ORDER BY date DESC LIMIT 1'
   ).get(assetId);
 
-  // Illiquid types: snapshot only
-  if (['real_estate', 'pension', 'other'].includes(asset.type)) {
+  // Illiquid types: snapshot only (a pension with a price source, like Meesman, is priced)
+  if (isSnapshotOnly(asset)) {
     return latestSnapshot ? latestSnapshot.value : null;
   }
 
   // Liquid types: stock / etf / crypto
-  if (['stock', 'etf', 'crypto'].includes(asset.type)) {
+  if (['stock', 'etf', 'crypto', 'pension'].includes(asset.type)) {
     const latestPrice = db.prepare(
       'SELECT date, price FROM asset_prices WHERE asset_id = ? ORDER BY date DESC LIMIT 1'
     ).get(assetId);
@@ -231,11 +235,11 @@ function getAssetValueAtDate(assetId, dateStr) {
     'SELECT date, value FROM snapshots WHERE asset_id = ? AND date <= ? ORDER BY date DESC LIMIT 1'
   ).get(assetId, dateStr);
 
-  if (['real_estate', 'pension', 'other'].includes(asset.type)) {
+  if (isSnapshotOnly(asset)) {
     return latestSnapshot ? latestSnapshot.value : null;
   }
 
-  if (['stock', 'etf', 'crypto'].includes(asset.type)) {
+  if (['stock', 'etf', 'crypto', 'pension'].includes(asset.type)) {
     const latestPrice = db.prepare(
       'SELECT date, price FROM asset_prices WHERE asset_id = ? AND date <= ? ORDER BY date DESC LIMIT 1'
     ).get(assetId, dateStr);
