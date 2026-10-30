@@ -4,6 +4,21 @@ import { api } from '../api.js';
 import { fmtEur, fmtNum, today } from '../format.js';
 import PriceSourceFields from './PriceSourceFields.jsx';
 
+// Sortable columns. Text sorts A→Z first, numbers high→low first.
+const SORT_COLUMNS = [
+  { key: 'name',     label: 'Name' },
+  { key: 'type',     label: 'Type' },
+  { key: 'currency', label: 'Currency' },
+  { key: 'value',    label: 'Current Value', num: true },
+  { key: 'weight',   label: 'Weight %',      num: true },
+  { key: 'xirr_1y',  label: 'XIRR (1Y)',     num: true },
+  { key: 'xirr_all', label: 'XIRR (All)',    num: true },
+];
+
+function loadSort() {
+  try { return JSON.parse(localStorage.getItem('assetsSort')) || null; } catch { return null; }
+}
+
 const ASSET_TYPES = ['stock', 'etf', 'savings', 'real_estate', 'pension', 'crypto', 'other'];
 
 function AssetModal({ asset, onClose, onSaved }) {
@@ -103,6 +118,13 @@ export default function AssetsView() {
   const [xirrLoading, setXirrLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshBanner, setRefreshBanner] = useState(null);
+  const [sort, setSort] = useState(loadSort); // { key, dir: 1 | -1 } or null = server order
+
+  function toggleSort(col) {
+    const next = sort?.key === col.key ? { key: col.key, dir: -sort.dir } : { key: col.key, dir: col.num ? -1 : 1 };
+    setSort(next);
+    try { localStorage.setItem('assetsSort', JSON.stringify(next)); } catch { /* sorting still works this session */ }
+  }
 
   function load() {
     setLoading(true);
@@ -149,6 +171,20 @@ export default function AssetsView() {
     .filter(a => !a.archived)
     .reduce((sum, a) => sum + (a.current_value ?? 0), 0);
 
+  function sortValue(a, key) {
+    if (key === 'name' || key === 'type' || key === 'currency') return a[key] ?? null;
+    if (key === 'value' || key === 'weight') return a.archived ? null : a.current_value; // weight ∝ value
+    return xirrMap[a.id]?.[key] ?? null;
+  }
+
+  const sortedAssets = !sort ? assets : [...assets].sort((a, b) => {
+    const va = sortValue(a, sort.key), vb = sortValue(b, sort.key);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1; // empty always last
+    if (vb === null) return -1;
+    return sort.dir * (typeof va === 'string' ? va.localeCompare(vb, 'nl') : va - vb);
+  });
+
   function fmtXirr(v) {
     if (v === undefined) return xirrLoading ? '…' : '—';
     if (v === null) return '—';
@@ -188,17 +224,17 @@ export default function AssetsView() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Currency</th>
-                <th className="num">Current Value</th>
-                <th className="num">Weight %</th>
-                <th className="num">XIRR (1Y)</th>
-                <th className="num">XIRR (All)</th>
+                {SORT_COLUMNS.map(col => (
+                  <th key={col.key} className={col.num ? 'num' : undefined}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => toggleSort(col)}>
+                    {col.label}{sort?.key === col.key && (sort.dir === 1 ? ' ▲' : ' ▼')}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {assets.map(a => {
+              {sortedAssets.map(a => {
                 const x = xirrMap[a.id];
                 return (
                   <tr key={a.id}
