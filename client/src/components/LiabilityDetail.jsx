@@ -61,11 +61,11 @@ function EditLiabilityModal({ liability, onClose, onSaved }) {
   );
 }
 
-function AddSnapshotModal({ liability, onClose, onSaved }) {
-  const [date, setDate] = useState(today());
-  const [balance, setBalance] = useState('');
-  const [rate, setRate] = useState('');
-  const [notes, setNotes] = useState('');
+function AddSnapshotModal({ liability, snapshot, onClose, onSaved }) {
+  const [date, setDate] = useState(snapshot?.date ?? today());
+  const [balance, setBalance] = useState(snapshot ? String(snapshot.balance) : '');
+  const [rate, setRate] = useState(snapshot?.interest_rate_pct != null ? String(snapshot.interest_rate_pct) : '');
+  const [notes, setNotes] = useState(snapshot?.notes ?? '');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -73,13 +73,14 @@ function AddSnapshotModal({ liability, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true); setErr('');
     try {
-      await api.liabilitySnapshots.create({
-        liability_id: liability.id,
+      const data = {
         date,
         balance: parseFloat(balance),
         interest_rate_pct: rate ? parseFloat(rate) : null,
         notes: notes.trim() || null,
-      });
+      };
+      if (snapshot) await api.liabilitySnapshots.update(snapshot.id, data);
+      else await api.liabilitySnapshots.create({ liability_id: liability.id, ...data });
       onSaved(); onClose();
     } catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
@@ -87,7 +88,7 @@ function AddSnapshotModal({ liability, onClose, onSaved }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Add Snapshot — {liability.name}</h2>
+        <h2>{snapshot ? 'Edit' : 'Add'} Snapshot — {liability.name}</h2>
         <form onSubmit={submit}>
           <div className="form-row-inline">
             <div>
@@ -114,7 +115,7 @@ function AddSnapshotModal({ liability, onClose, onSaved }) {
           {err && <div className="error-msg">{err}</div>}
           <div className="modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : snapshot ? 'Save' : 'Add'}</button>
           </div>
         </form>
       </div>
@@ -129,6 +130,7 @@ export default function LiabilityDetail() {
   const [loading, setLoading] = useState(true);
   const [editModal, setEditModal] = useState(false);
   const [addModal, setAddModal] = useState(false);
+  const [editSnap, setEditSnap] = useState(null);
 
   function loadLiability() {
     return api.liabilities.get(id).then(setLiability);
@@ -198,6 +200,7 @@ export default function LiabilityDetail() {
                   <td className="num">{s.interest_rate_pct !== null ? fmtNum(s.interest_rate_pct, 2) + '%' : '—'}</td>
                   <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{s.notes ?? ''}</td>
                   <td className="actions">
+                    <button className="btn btn-sm" style={{ marginRight: 6 }} onClick={() => setEditSnap(s)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => delSnapshot(s)}>Delete</button>
                   </td>
                 </tr>
@@ -209,6 +212,7 @@ export default function LiabilityDetail() {
 
       {editModal && <EditLiabilityModal liability={liability} onClose={() => setEditModal(false)} onSaved={reload} />}
       {addModal && <AddSnapshotModal liability={liability} onClose={() => setAddModal(false)} onSaved={loadSnapshots} />}
+      {editSnap && <AddSnapshotModal liability={liability} snapshot={editSnap} onClose={() => setEditSnap(null)} onSaved={loadSnapshots} />}
     </div>
   );
 }

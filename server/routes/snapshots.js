@@ -28,6 +28,18 @@ router.post('/', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM snapshots WHERE id = ?').get(info.lastInsertRowid));
 });
 
+// PUT /api/snapshots/:id
+router.put('/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM snapshots WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const { date, value, notes } = req.body;
+  if (value != null && value < 0) return res.status(400).json({ error: 'value must be >= 0' });
+
+  db.prepare('UPDATE snapshots SET date = ?, value = ?, notes = ? WHERE id = ?')
+    .run(date ?? row.date, value ?? row.value, notes !== undefined ? notes : row.notes, row.id);
+  res.json(db.prepare('SELECT * FROM snapshots WHERE id = ?').get(row.id));
+});
+
 // DELETE /api/snapshots/:id — hard delete
 router.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM snapshots WHERE id = ?').get(req.params.id);

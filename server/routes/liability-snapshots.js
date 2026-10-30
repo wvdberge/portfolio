@@ -31,6 +31,21 @@ router.post('/', (req, res) => {
   );
 });
 
+// PUT /api/liability-snapshots/:id
+router.put('/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM liability_snapshots WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const { date, balance, interest_rate_pct, notes } = req.body;
+  if (balance != null && balance < 0) return res.status(400).json({ error: 'balance must be >= 0' });
+
+  db.prepare('UPDATE liability_snapshots SET date = ?, balance = ?, interest_rate_pct = ?, notes = ? WHERE id = ?').run(
+    date ?? row.date, balance ?? row.balance,
+    interest_rate_pct !== undefined ? interest_rate_pct : row.interest_rate_pct,
+    notes !== undefined ? notes : row.notes, row.id
+  );
+  res.json(db.prepare('SELECT * FROM liability_snapshots WHERE id = ?').get(row.id));
+});
+
 // DELETE /api/liability-snapshots/:id — hard delete
 router.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM liability_snapshots WHERE id = ?').get(req.params.id);

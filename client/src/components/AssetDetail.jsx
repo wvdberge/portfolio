@@ -261,11 +261,11 @@ function AddPriceModal({ asset, onClose, onSaved }) {
   );
 }
 
-// ── Add Snapshot Modal ───────────────────────────────────────────────────────
-function AddSnapshotModal({ asset, onClose, onSaved }) {
-  const [date, setDate] = useState(today());
-  const [value, setValue] = useState('');
-  const [notes, setNotes] = useState('');
+// ── Add / Edit Snapshot Modal ────────────────────────────────────────────────
+function AddSnapshotModal({ asset, snapshot, onClose, onSaved }) {
+  const [date, setDate] = useState(snapshot?.date ?? today());
+  const [value, setValue] = useState(snapshot ? String(snapshot.value) : '');
+  const [notes, setNotes] = useState(snapshot?.notes ?? '');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -273,7 +273,9 @@ function AddSnapshotModal({ asset, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true); setErr('');
     try {
-      await api.snapshots.create({ asset_id: asset.id, date, value: parseFloat(value), notes: notes.trim() || null });
+      const data = { date, value: parseFloat(value), notes: notes.trim() || null };
+      if (snapshot) await api.snapshots.update(snapshot.id, data);
+      else await api.snapshots.create({ asset_id: asset.id, ...data });
       onSaved(); onClose();
     } catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
@@ -281,7 +283,7 @@ function AddSnapshotModal({ asset, onClose, onSaved }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Add Snapshot — {asset.name}</h2>
+        <h2>{snapshot ? 'Edit' : 'Add'} Snapshot — {asset.name}</h2>
         <form onSubmit={submit}>
           <div className="form-row-inline">
             <div>
@@ -301,7 +303,7 @@ function AddSnapshotModal({ asset, onClose, onSaved }) {
           {err && <div className="error-msg">{err}</div>}
           <div className="modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : snapshot ? 'Save' : 'Add'}</button>
           </div>
         </form>
       </div>
@@ -453,7 +455,7 @@ function PricesTab({ asset }) {
 function SnapshotsTab({ asset }) {
   const [snaps, setSnaps] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(false);
+  const [modal, setModal] = useState(false); // true = add, snapshot row = edit
 
   function load() {
     setLoading(true);
@@ -491,6 +493,7 @@ function SnapshotsTab({ asset }) {
                 <td className="num">{fmtEur(s.value)}</td>
                 <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{s.notes ?? ''}</td>
                 <td className="actions">
+                  <button className="btn btn-sm" style={{ marginRight: 6 }} onClick={() => setModal(s)}>Edit</button>
                   <button className="btn btn-sm btn-danger" onClick={() => del(s)}>Delete</button>
                 </td>
               </tr>
@@ -498,7 +501,8 @@ function SnapshotsTab({ asset }) {
           </tbody>
         </table>
       )}
-      {modal && <AddSnapshotModal asset={asset} onClose={() => setModal(false)} onSaved={load} />}
+      {modal && <AddSnapshotModal asset={asset} snapshot={modal === true ? null : modal}
+        onClose={() => setModal(false)} onSaved={load} />}
     </div>
   );
 }

@@ -45,6 +45,7 @@ export const api = {
   snapshots: {
     list: (assetId) => req('GET', `/api/snapshots?assetId=${assetId}`),
     create: (data) => req('POST', '/api/snapshots', data),
+    update: (id, data) => req('PUT', `/api/snapshots/${id}`, data),
     delete: (id) => req('DELETE', `/api/snapshots/${id}`),
   },
 
@@ -59,6 +60,7 @@ export const api = {
   liabilitySnapshots: {
     list: (liabilityId) => req('GET', `/api/liability-snapshots?liabilityId=${liabilityId}`),
     create: (data) => req('POST', '/api/liability-snapshots', data),
+    update: (id, data) => req('PUT', `/api/liability-snapshots/${id}`, data),
     delete: (id) => req('DELETE', `/api/liability-snapshots/${id}`),
   },
 
