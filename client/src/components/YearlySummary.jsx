@@ -16,7 +16,9 @@ function TypeBadge({ type }) {
   return <span className="type-badge">{type}</span>;
 }
 
-function PortfolioTable({ rows }) {
+function PortfolioTable({ rows, exHouse }) {
+  const nominal = r => exHouse ? r.nominal_ex_re_pct : r.nominal_return_pct;
+  const real = r => exHouse ? r.real_ex_re_pct : r.real_return_pct;
   return (
     <table className="data-table">
       <thead>
@@ -28,8 +30,6 @@ function PortfolioTable({ rows }) {
           <th className="num">End NW</th>
           <th className="num">Nominal %</th>
           <th className="num">Real %</th>
-          <th className="num">Excl. woning %</th>
-          <th className="num">Excl. woning real %</th>
           <th className="num">MSCI World %</th>
         </tr>
       </thead>
@@ -41,10 +41,8 @@ function PortfolioTable({ rows }) {
             <td className="num">{fmtEur(r.contributions)}</td>
             <td className={`num ${pctClass(r.growth)}`}>{fmtEur(r.growth)}</td>
             <td className="num">{fmtEur(r.end_net_worth)}</td>
-            <td className={`num ${pctClass(r.nominal_return_pct)}`}>{fmtPct(r.nominal_return_pct)}</td>
-            <td className={`num ${pctClass(r.real_return_pct)}`}>{fmtPct(r.real_return_pct)}</td>
-            <td className={`num ${pctClass(r.nominal_ex_re_pct)}`}>{fmtPct(r.nominal_ex_re_pct)}</td>
-            <td className={`num ${pctClass(r.real_ex_re_pct)}`}>{fmtPct(r.real_ex_re_pct)}</td>
+            <td className={`num ${pctClass(nominal(r))}`}>{fmtPct(nominal(r))}</td>
+            <td className={`num ${pctClass(real(r))}`}>{fmtPct(real(r))}</td>
             <td className={`num ${pctClass(r.msci_world_pct)}`}>{fmtPct(r.msci_world_pct)}</td>
           </tr>
         ))}
@@ -113,6 +111,7 @@ export default function YearlySummary() {
   const [loading, setLoading] = useState(true);
   const [expandedYears, setExpandedYears] = useState(new Set());
   const [expandAll, setExpandAll] = useState(false);
+  const [exHouse, setExHouse] = useState(false); // returns without real estate
 
   useEffect(() => {
     api.portfolio.yearlySummary()
@@ -161,7 +160,15 @@ export default function YearlySummary() {
       ) : (
         <>
           <div className="section">
-            <PortfolioTable rows={portfolio} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <label className="toggle-label">
+                <input type="checkbox" checked={exHouse} onChange={e => setExHouse(e.target.checked)} />
+                Returns excl. woning
+              </label>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <PortfolioTable rows={portfolio} exHouse={exHouse} />
+            </div>
           </div>
 
           <div className="section">
