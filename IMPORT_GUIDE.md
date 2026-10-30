@@ -14,6 +14,7 @@
 2. Upload via Import. `Overboeking` and `Dividend reservering` rows are skipped.
 3. `Aankoop` imports as a buy. `Dividend Uitkering` imports as a dividend at the net amount (dividendbelasting goes in the notes); CB reinvests it through a separate `Aankoop`, so the two cancel in XIRR.
 4. Sell rows are not parsed yet and show as errors; enter them by hand.
+5. Each fund is its own priced asset (CB Wereldwijd Aandelenfonds, CB Opkomende Markten Aandelenfonds), mapped by fund name. Each purchase brings its units and Koers, so the value follows the latest monthly price. Purchases before 2025-10-28 carry units spread pro rata over the known total, so values before that date are unknown. Don't add snapshots to these assets.
 
 ### ABN AMRO savings (TAB/TXT file)
 1. Log in → Sparen → download TAB/TXT export
