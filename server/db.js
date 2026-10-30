@@ -264,6 +264,12 @@ function getAssetValueAtDate(assetId, dateStr) {
       return latestSnapshot.value;
     }
 
+    // Without deposits the transaction balance is just interest/fees, not the account value
+    const hasDeposit = db.prepare(
+      "SELECT 1 FROM transactions WHERE asset_id = ? AND type = 'deposit' AND date <= ? LIMIT 1"
+    ).get(assetId, dateStr);
+    if (!hasDeposit) return null;
+
     const result = db.prepare(`
       SELECT
         COALESCE(SUM(CASE WHEN type IN ('deposit','interest')    THEN amount ELSE 0 END), 0) -
