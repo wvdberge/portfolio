@@ -75,6 +75,23 @@ function meesmanUnits(netAmount, date, history) {
   return { quantity: Math.round(netAmount / trade.price * 10000) / 10000, price: trade.price, tradeDate: trade.date };
 }
 
+// ── CBS CPI ───────────────────────────────────────────────────────────────────
+
+// Monthly CPI, all households, total spending ("Alle bestedingen"), 2025=100,
+// from CBS open data. Table 86141NED runs from 2009-12; it replaced 83131NED
+// (2015=100, ended 2025). The category key is padded with two spaces.
+const CBS_CPI_URL = "https://opendata.cbs.nl/ODataApi/odata/86141NED/TypedDataSet?$filter=Bestedingscategorieen%20eq%20%27T001112%20%20%27&$select=Perioden,CPI_1";
+
+async function fetchCbsCpi() {
+  const resp = await fetch(CBS_CPI_URL);
+  if (!resp.ok) throw new Error(`CBS CPI: HTTP ${resp.status}`);
+  const rows = (await resp.json()).value
+    .filter(r => /^\d{4}MM\d{2}$/.test(r.Perioden) && r.CPI_1 != null)
+    .map(r => ({ date: `${r.Perioden.slice(0, 4)}-${r.Perioden.slice(6, 8)}-01`, cpi_value: r.CPI_1 }));
+  if (rows.length === 0) throw new Error('CBS CPI: no monthly values returned');
+  return rows;
+}
+
 // ── Brand New Day ─────────────────────────────────────────────────────────────
 
 async function fetchBrandNewDayPrice(fundId) {
@@ -101,6 +118,7 @@ module.exports = {
   fetchAlphaVantagePrice,
   fetchMeesmanHistory,
   meesmanUnits,
+  fetchCbsCpi,
   fetchBrandNewDayPrice,
   MEESMAN_FUNDS,
 };

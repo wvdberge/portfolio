@@ -74,6 +74,7 @@ export const api = {
   cpi: {
     list: () => req('GET', '/api/cpi'),
     create: (data) => req('POST', '/api/cpi', data),
+    sync: () => req('POST', '/api/cpi/sync'),
     delete: (id) => req('DELETE', `/api/cpi/${id}`),
   },
 

@@ -1,6 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db');
+const { fetchCbsCpi } = require('../priceFetchers');
+
+// Fetch the full monthly series from CBS and upsert it. Also run by the scheduler.
+async function syncCpi() {
+  const rows = await fetchCbsCpi();
+  const upsert = db.prepare('INSERT INTO cpi_data (date, cpi_value) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET cpi_value = excluded.cpi_value');
+  db.transaction(() => { for (const r of rows) upsert.run(r.date, r.cpi_value); })();
+  return { count: rows.length, latest: rows[rows.length - 1] };
+}
+
+// POST /api/cpi/sync — before /:id
+router.post('/sync', async (req, res) => {
+  try {
+    res.json(await syncCpi());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 // GET /api/cpi
 router.get('/', (req, res) => {
@@ -31,3 +49,4 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.syncCpi = syncCpi;

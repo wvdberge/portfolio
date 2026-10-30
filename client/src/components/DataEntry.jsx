@@ -89,10 +89,21 @@ function CpiSection() {
   const [cpiValue, setCpiValue] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   function load() {
     setLoading(true);
     api.cpi.list().then(setRows).finally(() => setLoading(false));
+  }
+
+  async function sync() {
+    setSyncing(true); setErr(''); setSyncMsg('');
+    try {
+      const { count, latest } = await api.cpi.sync();
+      setSyncMsg(`${count} months from CBS, latest ${latest.date.slice(0, 7)}`);
+      load();
+    } catch (e) { setErr(e.message); } finally { setSyncing(false); }
   }
   useEffect(load, []);
 
@@ -122,7 +133,9 @@ function CpiSection() {
     <div className="section">
       <div className="section-header">
         <h2>CPI Values (Netherlands)</h2>
+        <button className="btn" onClick={sync} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync from CBS'}</button>
       </div>
+      {syncMsg && <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>{syncMsg}</div>}
 
       <form onSubmit={submit} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16 }}>
         <div style={{ flex: 1 }}>

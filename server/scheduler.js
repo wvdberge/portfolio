@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { runPriceRefresh } = require('./routes/prices');
+const { syncCpi } = require('./routes/cpi');
 
 // Default: 18:00 Mon-Fri. Override via PRICE_FETCH_CRON env var.
 // TZ is controlled by the process environment (set TZ=Europe/Amsterdam in docker-compose).
@@ -18,6 +19,12 @@ cron.schedule(schedule, async () => {
     }
   } catch (err) {
     console.error(`[scheduler] Unexpected error: ${err.message}`);
+  }
+  try {
+    const { count, latest } = await syncCpi();
+    console.log(`[scheduler] CPI synced — ${count} months, latest ${latest.date}`);
+  } catch (err) {
+    console.warn(`[scheduler] CPI sync failed: ${err.message}`);
   }
 });
 
