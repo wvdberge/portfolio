@@ -9,11 +9,11 @@ services:
       - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-}
       - TZ=${TZ:-Europe/Amsterdam}
       - PRICE_FETCH_CRON=${PRICE_FETCH_CRON:-0 18 * * 1-5}
-    # The NAS resolves via its own DNS (192.168.1.202), which doesn't answer the
-    # Docker network; without this, price fetching fails with EAI_AGAIN
+    # Pi-hole on the NAS. It must permit all origins (Settings > DNS > Interface
+    # settings), otherwise it ignores the Docker network and price fetching
+    # fails with EAI_AGAIN
     dns:
-      - 1.1.1.1
-      - 9.9.9.9
+      - 192.168.1.202
     restart: unless-stopped
 
 volumes:
