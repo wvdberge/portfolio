@@ -62,7 +62,22 @@ function ReturnBox({ label, value, exHouse, msci, loading }) {
 
 const AREA_TYPES = ['stock', 'etf', 'savings', 'real_estate', 'pension', 'crypto', 'other'];
 
+function loadHiddenSeries() {
+  try { return new Set(JSON.parse(localStorage.getItem('netWorthHidden')) || []); } catch { return new Set(); }
+}
+
 function NetWorthChart({ data }) {
+  // Series switched off by clicking the legend; remembered per browser
+  const [hidden, setHidden] = useState(loadHiddenSeries);
+  function toggle(key) {
+    setHidden(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      try { localStorage.setItem('netWorthHidden', JSON.stringify([...next])); } catch { /* toggling still works this session */ }
+      return next;
+    });
+  }
+
   if (!data || data.length === 0) return <div className="empty-state">No historical data yet.</div>;
 
   // Format for recharts: flatten breakdown into top-level keys
@@ -80,12 +95,17 @@ function NetWorthChart({ data }) {
         <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} interval="preserveStartEnd" />
         <YAxis tickFormatter={fmtEurK} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} width={52} />
         <Tooltip formatter={(v, name) => [fmtEur(v), name]} labelStyle={{ color: 'var(--text)' }} />
-        <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+        <Legend iconSize={10} wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+          onClick={e => toggle(e.dataKey)}
+          formatter={(value, entry) => (
+            <span style={{ color: hidden.has(entry.dataKey) ? 'var(--text-faint)' : undefined,
+              textDecoration: hidden.has(entry.dataKey) ? 'line-through' : undefined }}>{value}</span>
+          )} />
         {AREA_TYPES.map(t => (
-          <Area key={t} type="monotone" dataKey={t} stackId="1"
+          <Area key={t} type="monotone" dataKey={t} stackId="1" hide={hidden.has(t)}
             stroke={TYPE_COLORS[t]} fill={TYPE_COLORS[t]} fillOpacity={0.7} />
         ))}
-        <Area type="monotone" dataKey="liabilities" stackId="2"
+        <Area type="monotone" dataKey="liabilities" stackId="2" hide={hidden.has('liabilities')}
           stroke={TYPE_COLORS.liabilities} fill={TYPE_COLORS.liabilities} fillOpacity={0.5} />
       </AreaChart>
     </ResponsiveContainer>
