@@ -13,6 +13,9 @@ router.get('/', (req, res) => {
   }));
 
   const totalAssets = assetValues.reduce((sum, a) => sum + (a.current_value ?? 0), 0);
+  // Weights and targets cover investments only: the house (real_estate) is left out
+  const isInvestment = a => a.type !== 'real_estate';
+  const totalInvestments = assetValues.filter(isInvestment).reduce((sum, a) => sum + (a.current_value ?? 0), 0);
 
   const allocation = assetValues.map(a => ({
     id: a.id,
@@ -21,11 +24,11 @@ router.get('/', (req, res) => {
     currency: a.currency,
     current_value: a.current_value,
     target_allocation_pct: a.target_allocation_pct,
-    weight_pct: totalAssets > 0 && a.current_value != null
-      ? (a.current_value / totalAssets) * 100
+    weight_pct: isInvestment(a) && totalInvestments > 0 && a.current_value != null
+      ? (a.current_value / totalInvestments) * 100
       : null,
-    drift_pp: (a.target_allocation_pct != null && totalAssets > 0 && a.current_value != null)
-      ? (a.current_value / totalAssets) * 100 - a.target_allocation_pct
+    drift_pp: (isInvestment(a) && a.target_allocation_pct != null && totalInvestments > 0 && a.current_value != null)
+      ? (a.current_value / totalInvestments) * 100 - a.target_allocation_pct
       : null,
   }));
 
@@ -47,6 +50,7 @@ router.get('/', (req, res) => {
   res.json({
     net_worth: netWorth,
     total_assets: totalAssets,
+    total_investments: totalInvestments,
     total_liabilities: totalLiabilities,
     allocation,
     liabilities: liabilityData,

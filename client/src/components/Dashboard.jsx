@@ -95,7 +95,7 @@ function NetWorthChart({ data }) {
 function AllocationDonut({ allocation }) {
   if (!allocation || allocation.length === 0) return <div className="empty-state">No assets yet.</div>;
 
-  const activeItems = allocation.filter(a => a.current_value > 0);
+  const activeItems = allocation.filter(a => a.current_value > 0 && a.weight_pct != null); // excl. woning
   const actual = activeItems.map(a => ({ name: a.name, value: Math.round(a.weight_pct * 10) / 10 }));
 
   const withTarget = allocation.filter(a => a.target_allocation_pct != null && a.target_allocation_pct > 0);
@@ -286,7 +286,7 @@ export default function Dashboard() {
                   <th>Asset</th>
                   <th>Type</th>
                   <th className="num">Value (EUR)</th>
-                  <th className="num">Weight %</th>
+                  <th className="num">Weight % (excl. woning)</th>
                   <th className="num">Target %</th>
                   <th className="num">Drift (pp)</th>
                 </tr>

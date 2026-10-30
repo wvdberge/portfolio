@@ -10,7 +10,7 @@ const SORT_COLUMNS = [
   { key: 'type',     label: 'Type' },
   { key: 'currency', label: 'Currency' },
   { key: 'value',    label: 'Current Value', num: true },
-  { key: 'weight',   label: 'Weight %',      num: true },
+  { key: 'weight',   label: 'Weight % (excl. woning)', num: true },
   { key: 'xirr_1y',  label: 'XIRR (1Y)',     num: true },
   { key: 'xirr_all', label: 'XIRR (All)',    num: true },
 ];
@@ -85,7 +85,7 @@ function AssetModal({ asset, onClose, onSaved }) {
             </div>
           </div>
           <div className="form-row">
-            <label>Target allocation %</label>
+            <label>Target allocation % (of investments excl. woning)</label>
             <input type="number" step="0.01" min="0" max="100" value={form.target_allocation_pct}
               onChange={e => set('target_allocation_pct', e.target.value)} placeholder="optional" style={{ maxWidth: 180 }} />
           </div>
@@ -167,13 +167,16 @@ export default function AssetsView() {
     }
   }
 
+  // Weights cover investments only, like the dashboard: the house is left out
+  const hasWeight = a => !a.archived && a.type !== 'real_estate';
   const totalValue = assets
-    .filter(a => !a.archived)
+    .filter(hasWeight)
     .reduce((sum, a) => sum + (a.current_value ?? 0), 0);
 
   function sortValue(a, key) {
     if (key === 'name' || key === 'type' || key === 'currency') return a[key] ?? null;
-    if (key === 'value' || key === 'weight') return a.archived ? null : a.current_value; // weight ∝ value
+    if (key === 'value') return a.archived ? null : a.current_value;
+    if (key === 'weight') return hasWeight(a) ? a.current_value : null; // weight ∝ value
     return xirrMap[a.id]?.[key] ?? null;
   }
 
@@ -245,7 +248,7 @@ export default function AssetsView() {
                     <td>{a.currency}</td>
                     <td className="num">{a.current_value !== null ? fmtEur(a.current_value) : '—'}</td>
                     <td className="num">
-                      {!a.archived && totalValue > 0 && a.current_value !== null
+                      {hasWeight(a) && totalValue > 0 && a.current_value !== null
                         ? fmtNum((a.current_value / totalValue) * 100) + '%'
                         : '—'}
                     </td>

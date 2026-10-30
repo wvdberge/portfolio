@@ -61,7 +61,7 @@ function AssetModal({ asset, onClose, onSaved }) {
             </div>
           </div>
           <div className="form-row">
-            <label>Target allocation %</label>
+            <label>Target allocation % (of investments excl. woning)</label>
             <input type="number" step="0.01" min="0" max="100"
               value={form.target_allocation_pct} onChange={e => set('target_allocation_pct', e.target.value)}
               placeholder="optional" style={{ maxWidth: 180 }} />
