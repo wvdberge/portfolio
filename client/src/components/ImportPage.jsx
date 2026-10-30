@@ -7,6 +7,7 @@ const FORMATS = [
   { value: 'abn_savings', label: 'ABN AMRO Savings Account (.TAB)' },
   { value: 'centraal_beheer', label: 'Centraal Beheer' },
   { value: 'meesman', label: 'Meesman' },
+  { value: 'raisin', label: 'Raisin (PDF rekeningafschrift)' },
 
 ];
 
@@ -48,7 +49,7 @@ function UploadStep({ onParsed }) {
       <form onSubmit={handleParse}>
         <div className="form-row">
           <label>CSV file</label>
-          <input type="file" accept=".csv,.txt,.tab,.TAB" onChange={e => setFile(e.target.files[0])} required />
+          <input type="file" accept=".csv,.txt,.tab,.TAB,.pdf" onChange={e => setFile(e.target.files[0])} required />
         </div>
         <div className="form-row">
           <label>Format</label>

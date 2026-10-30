@@ -425,7 +425,8 @@ function buildCashflows(assetIds, fromDateStr, toDateStr) {
     const contributed = db.prepare(
       "SELECT 1 FROM transactions WHERE asset_id = ? AND type IN ('buy','deposit') LIMIT 1"
     ).get(assetId);
-    if (!contributed) {
+    const archived = db.prepare('SELECT archived FROM assets WHERE id = ?').get(assetId)?.archived;
+    if (!contributed && !archived) { // archived: no closing value, so no opening either
       const first = db.prepare('SELECT date, value FROM snapshots WHERE asset_id = ? ORDER BY date LIMIT 1').get(assetId);
       if (first && first.value > 0 && (!fromDateStr || first.date > fromDateStr) && first.date <= toDateStr) {
         cfs.push({ date: parseDate(first.date), amount: -first.value });

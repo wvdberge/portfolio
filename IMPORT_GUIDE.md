@@ -22,6 +22,14 @@
 5. The account's value comes from the TAB, not from snapshots: SEPA transfers are deposits/withdrawals, and fund purchases, sales and servicekosten also get a cash leg on the account. The computed balance matches the TAB's own balance column, apart from a few days between a dividend and its reinvestment. Don't add snapshots to this account: a snapshot switches it back to snapshot valuation and makes interest count as paid out.
 6. Export from 2025-01-01 onward. ABN history starts with an opening purchase per fund on 2024-12-29; earlier rows would double it.
 
+### Raisin (PDF account statements)
+1. Per account (spaarrekening or deposito): download the account statement PDF, **from the account's start date** to today
+2. Upload one PDF at a time; the format is detected from the `.pdf` extension
+3. First import creates one asset per account ("Raisin <bank> <product> (<last 3 digits>)") and remembers the account-ID; later imports go to the same asset and skip duplicates
+4. Every row is checked against the printed running balance; a mismatch shows as an error row
+5. Interest stays in the account, so it counts as return through the balance. Don't add snapshots to these assets.
+6. Deposito interest is credited once a year, so the deposito's XIRR lags until the next interest date
+
 ---
 
 ## Savings accounts (fully manual)

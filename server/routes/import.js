@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const Papa = require('papaparse');
+const pdfParse = require('pdf-parse/lib/pdf-parse.js'); // lib path: the package index runs a debug self-test
 const { db } = require('../db');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -270,6 +271,69 @@ function parseAbnSavings(rawText) {
   });
 }
 
+// Raisin account statement (PDF), savings or deposito. pdf-parse joins a row's cells
+// without spaces: "23.01.2025Storting100,00200,00" = date, description, amount, balance.
+// Each row is checked against the printed running balance, which also tells debit from credit.
+function parseRaisinPdf(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const accountId = (text.match(/Rekening-ID:\s*(\S+)/) || [])[1];
+  if (!accountId) return [{ status: 'error', error: 'No Rekening-ID found: not a Raisin statement?' }];
+  const product = ((text.match(/Looptijd\/Product:\s*(.+)/) || [])[1] || '').trim();
+  const bank = lines[0] || accountId;
+  const kind = /spaar/i.test(product) ? 'spaarrekening' : `deposito ${product}`;
+  const asset_name = `Raisin ${bank} ${kind} (${accountId.slice(-3)})`; // same bank can hold several depositos
+
+  const AMOUNT = /\d{1,3}(?:\.\d{3})*,\d{2}/g;
+  const rows = [];
+  let balance = null;
+  for (const line of lines) {
+    const m = line.match(/^(\d{2})\.(\d{2})\.(\d{4})(\D+?)((?:\d{1,3}(?:\.\d{3})*,\d{2}){1,2})$/);
+    if (!m) continue;
+    const date = `${m[3]}-${m[2]}-${m[1]}`;
+    const desc = m[4].trim();
+    const amounts = m[5].match(AMOUNT).map(parseDutchNumber);
+    const printed = amounts[amounts.length - 1];
+
+    if (desc === 'Saldo startdatum') {
+      balance = printed;
+      if (printed > 0) rows.push({ date, type: 'deposit', amount: printed, notes: 'Beginsaldo', opening: true });
+      continue;
+    }
+    if (desc === 'Saldo einddatum') {
+      if (balance === null || Math.abs(balance - printed) > 0.005) {
+        rows.push({ status: 'error', error: `End balance ${printed} does not match computed ${balance}`, _raw: line });
+      }
+      continue;
+    }
+    const type = { Storting: 'deposit', Opname: 'withdrawal', Rentebijschrijving: 'interest' }[desc];
+    if (!type || amounts.length !== 2) {
+      rows.push({ status: 'error', error: `Unrecognised row: ${desc}`, _raw: line });
+      continue;
+    }
+    const amount = amounts[0];
+    const expected = Math.round((balance + (type === 'withdrawal' ? -amount : amount)) * 100) / 100;
+    if (balance === null || Math.abs(expected - printed) > 0.005) {
+      rows.push({ status: 'error', error: `Balance ${printed} does not follow from ${balance} and ${desc} ${amount}`, _raw: line });
+      balance = printed;
+      continue;
+    }
+    balance = printed;
+    rows.push({ date, type, amount, notes: type === 'interest' ? 'Rente' : null });
+  }
+
+  return rows.map(r => r.status === 'error' ? r : {
+    status: 'ok',
+    asset_name,
+    external_name: accountId,
+    broker: 'raisin',
+    quantity: null,
+    price_per_unit: null,
+    fee: null,
+    asset_id: null,
+    ...r,
+  });
+}
+
 // Decode upload as UTF-16 (LE or BE, with or without BOM) or UTF-8.
 // Centraal Beheer exports have shipped as both UTF-16 LE with BOM and UTF-16 BE without BOM.
 function decodeBuffer(buf) {
@@ -334,9 +398,29 @@ router.get('/mappings', (req, res) => {
 });
 
 // POST /api/import/preview
-router.post('/preview', upload.single('file'), (req, res) => {
+router.post('/preview', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const checkDuplicate = makeDuplicateChecker();
+
+  // ── Raisin (PDF account statements) ──────────────────────────────────────
+  if (req.body.format === 'raisin' || (req.file.originalname || '').toLowerCase().endsWith('.pdf')) {
+    let rows;
+    try {
+      rows = parseRaisinPdf((await pdfParse(req.file.buffer)).text);
+    } catch (err) {
+      return res.status(400).json({ error: `Could not read PDF: ${err.message}` });
+    }
+    for (const row of rows) {
+      if (row.status !== 'ok') continue;
+      const mapping = db.prepare('SELECT asset_id FROM import_mappings WHERE broker = ? AND external_name = ?').get('raisin', row.external_name);
+      if (mapping) row.asset_id = mapping.asset_id;
+      if (!row.asset_id) continue;
+      // A statement exported from mid-history repeats an opening balance the account already has
+      const earlier = row.opening && db.prepare('SELECT 1 FROM transactions WHERE asset_id = ? AND date <= ? LIMIT 1').get(row.asset_id, row.date);
+      if (earlier || checkDuplicate(row)) row.status = 'duplicate';
+    }
+    return res.json({ format: 'raisin', rows });
+  }
 
   const rawText = decodeBuffer(req.file.buffer);
   const filename = req.file.originalname || '';
@@ -498,10 +582,10 @@ router.post('/commit', (req, res) => {
     }
 
     // Resolve asset_id for Meesman, Centraal Beheer (create if still unresolved)
-    if (['meesman', 'centraal_beheer'].includes(row.broker) && !row.asset_id) {
+    if (['meesman', 'centraal_beheer', 'raisin'].includes(row.broker) && !row.asset_id) {
       const assetName = row.asset_name;
       if (!newAssetCache[assetName]) {
-        const typeGuess = ['buy', 'sell', 'dividend'].includes(row.type) ? 'etf' : 'other';
+        const typeGuess = row.broker === 'raisin' ? 'savings' : ['buy', 'sell', 'dividend'].includes(row.type) ? 'etf' : 'other';
         const info = db.prepare(
           'INSERT INTO assets (name, type, currency) VALUES (?, ?, ?)'
         ).run(assetName, typeGuess, 'EUR');
@@ -517,6 +601,9 @@ router.post('/commit', (req, res) => {
     }
 
     if (!row.asset_id) { errors.push({ row, reason: 'Could not determine asset' }); continue; }
+
+    // Opening balance of a statement that doesn't start at the account's beginning
+    if (row.opening && db.prepare('SELECT 1 FROM transactions WHERE asset_id = ? AND date <= ? LIMIT 1').get(row.asset_id, row.date)) { skipped++; continue; }
 
     // Final duplicate check
     if (checkDuplicate(row)) { skipped++; continue; }
