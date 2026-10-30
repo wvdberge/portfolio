@@ -714,7 +714,7 @@ function getYearlySummary() {
     });
 
     // Per-asset rows
-    const noMsciTypes = new Set(['savings', 'real_estate', 'pension']);
+    const noMsciTypes = new Set(['savings', 'real_estate']);
     for (const asset of assets) {
       const sv = getAssetValueAtDate(asset.id, priorEnd);
       const ev = getAssetValueAtDate(asset.id, actualEnd);

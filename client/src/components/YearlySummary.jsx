@@ -55,7 +55,7 @@ function AssetTable({ rows, year }) {
   const yearRows = rows.filter(r => r.year === year);
   if (yearRows.length === 0) return <div className="empty-state">No asset data for {year}.</div>;
 
-  const noMsciTypes = new Set(['savings', 'real_estate', 'pension']);
+  const noMsciTypes = new Set(['savings', 'real_estate']);
 
   return (
     <table className="data-table">
