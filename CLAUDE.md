@@ -86,8 +86,9 @@ Dashboard weights and targets (`target_allocation_pct`) are shares of investment
 | Centraal Beheer | `centraal_beheer` | UTF-16 (LE with BOM or BE without), semicolon, detected by header. Purchases at Bruto. One priced asset per fund, mapped by fund name; each purchase brings units and Koers (monthly prices). `Overboeking` and `Dividend reservering` skipped. |
 | Meesman | `meesman` | CSV. `Dividend herbelegging` emits dividend + buy. `Stortingsmix` rows have no units: derived from the price-history xlsx (first trading price on or after the deposit date, class A); an unpublished price is an error row. |
 | Raisin | `raisin` | PDF account statement (pdf-parse), detected by `.pdf`. One savings asset per account, mapped by Rekening-ID. Every row checked against the printed running balance. Opening balance booked only if the account has no earlier transactions. |
+| Trade Republic | `trade_republic` | CSV transaction export, `.` decimals, signed amounts, detected by header (`transaction_id`, `asset_class`). Only `TRADING` BUY/SELL rows import (savings plan, round-up and saveback are all BUY); `CASH` rows (card payments, transfers) skipped. One priced asset per ISIN, auto-created. |
 
-The duplicate check counts occurrences per request: two identical rows in one file both import unless the DB already holds two. Mappings live in `import_mappings`; Meesman, CB and Raisin auto-create assets when unmapped. `IMPORT_GUIDE.md` has the user-facing steps.
+The duplicate check counts occurrences per request: two identical rows in one file both import unless the DB already holds two. Mappings live in `import_mappings`; Meesman, CB, Raisin and Trade Republic auto-create assets when unmapped. `IMPORT_GUIDE.md` has the user-facing steps.
 
 ### External data
 

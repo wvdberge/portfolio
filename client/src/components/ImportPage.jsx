@@ -8,6 +8,7 @@ const FORMATS = [
   { value: 'centraal_beheer', label: 'Centraal Beheer' },
   { value: 'meesman', label: 'Meesman' },
   { value: 'raisin', label: 'Raisin (PDF rekeningafschrift)' },
+  { value: 'trade_republic', label: 'Trade Republic (CSV)' },
 
 ];
 

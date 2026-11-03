@@ -146,6 +146,47 @@ function parseCentraalBeheer(rows) {
   });
 }
 
+// Trade Republic transaction export (CSV, '.' decimals, amounts signed). The account is also
+// a current account: CASH rows (transfers, card payments, interest) are skipped. Savings plan,
+// round-up and saveback executions all arrive as TRADING BUY rows.
+function parseTradeRepublic(rows) {
+  return rows.flatMap(row => {
+    try {
+      if (row['category'] !== 'TRADING') return [];
+      const typeRaw = (row['type'] || '').trim();
+      const type = { BUY: 'buy', SELL: 'sell' }[typeRaw];
+      if (!type) return [{ status: 'error', error: `Unknown trading type: ${typeRaw}`, _raw: row }];
+
+      const date = (row['date'] || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [{ status: 'error', error: `Unrecognised date: ${date}`, _raw: row }];
+
+      const isin = (row['symbol'] || '').trim();
+      const amount = Math.abs(parseFloat(row['amount']));
+      const quantity = Math.abs(parseFloat(row['shares']));
+      const price = parseFloat(row['price']);
+      const fee = Math.abs(parseFloat(row['fee']));
+      if (!isin || isNaN(amount)) return [{ status: 'error', error: 'Missing ISIN or amount', _raw: row }];
+
+      return [{
+        status: 'ok',
+        date,
+        type,
+        asset_name: `${(row['name'] || isin).trim()} (Trade Republic)`,
+        external_name: isin,
+        broker: 'trade_republic',
+        quantity: !isNaN(quantity) ? quantity : null,
+        price_per_unit: !isNaN(price) ? price : null,
+        amount,
+        fee: fee > 0 ? fee : null,
+        notes: null,
+        asset_id: null,
+      }];
+    } catch (err) {
+      return [{ status: 'error', error: err.message, _raw: row }];
+    }
+  });
+}
+
 function parseAbnSavings(rawText) {
   const lines = rawText.split('\n').filter(l => l.trim());
   return lines.flatMap(line => {
@@ -357,6 +398,7 @@ function detectFormat(filename, headers) {
   const h = headers.map(s => s.toLowerCase());
   if (h.includes('datum') && h.includes('type') && h.includes('fonds') && h.includes('bruto')) return 'meesman';
   if (h.some(c => c.includes('boekdatum')) && h.some(c => c.includes('soort'))) return 'centraal_beheer';
+  if (h.some(c => c.includes('transaction_id')) && h.some(c => c.includes('asset_class'))) return 'trade_republic';
 
   return null;
 }
@@ -512,12 +554,13 @@ router.post('/preview', upload.single('file'), async (req, res) => {
   let rows;
   try {
     if (format === 'meesman') rows = parseMeesman(parsed.data);
+    else if (format === 'trade_republic') rows = parseTradeRepublic(parsed.data);
     else return res.status(400).json({ error: `Unknown format: ${format}` });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
 
-  // Resolve asset_id via import_mappings or name match (Meesman)
+  // Resolve asset_id via import_mappings or name match (Meesman, Trade Republic)
   const meesmanHistory = {};
   for (const row of rows) {
     if (row.status !== 'ok') continue;
@@ -605,8 +648,8 @@ router.post('/commit', (req, res) => {
       }
     }
 
-    // Resolve asset_id for Meesman, Centraal Beheer (create if still unresolved)
-    if (['meesman', 'centraal_beheer', 'raisin'].includes(row.broker) && !row.asset_id) {
+    // Resolve asset_id for Meesman, Centraal Beheer, Raisin, Trade Republic (create if still unresolved)
+    if (['meesman', 'centraal_beheer', 'raisin', 'trade_republic'].includes(row.broker) && !row.asset_id) {
       const assetName = row.asset_name;
       if (!newAssetCache[assetName]) {
         const typeGuess = row.broker === 'raisin' ? 'savings' : ['buy', 'sell', 'dividend'].includes(row.type) ? 'etf' : 'other';

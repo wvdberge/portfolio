@@ -32,6 +32,14 @@
 5. Interest stays in the account, so it counts as return through the balance. Don't add snapshots to these assets.
 6. Deposito interest is credited once a year, so the deposito's XIRR lags until the next interest date
 
+### Trade Republic (CSV)
+1. In the app or web: Profile → Transaction export → CSV. Export the full period; duplicates are skipped.
+2. Upload via Import; the format is detected from the header.
+3. Only `TRADING` rows import. The savings plan, round-ups and saveback all arrive as `BUY` rows and book as buys, so saveback counts as a contribution, not as return. `CASH` rows (transfers in, card payments, interest on cash) are skipped: the cash side is a current account, not an investment.
+4. First import creates one ETF asset per ISIN ("<name> (Trade Republic)") and remembers the ISIN. Each buy brings its units and price.
+5. Set the price source on the asset to Alpha Vantage with ticker `IWDA.AMS` (iShares Core MSCI World, IE00B4L5Y983). Don't add snapshots.
+6. A `TRADING` row of another type (e.g. a dividend or a new saveback label) shows as an error; enter it by hand and extend the parser.
+
 ---
 
 ## Savings accounts (fully manual)
