@@ -11,7 +11,10 @@ async function fetchAlphaVantagePrice(ticker) {
   if (!resp.ok) throw new Error(`Alpha Vantage: HTTP ${resp.status}`);
   const data = await resp.json();
   const quote = data['Global Quote'];
-  if (!quote || !quote['05. price']) throw new Error('Alpha Vantage: empty quote — unknown ticker?');
+  if (!quote || !quote['05. price']) {
+    // The daily rate limit also comes back as a quote-less response, with the reason in Information/Note
+    throw new Error(`Alpha Vantage: ${data['Error Message'] || data.Information || data.Note || 'empty quote, unknown ticker?'}`.slice(0, 200));
+  }
   return {
     price: parseFloat(quote['05. price']),
     date: quote['07. latest trading day'],
