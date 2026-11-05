@@ -37,7 +37,7 @@ One-off data fixes on the live DB: write an idempotent node script that requires
 
 - `server/index.js` — Express entry point, mounts all routes under `/api`
 - `server/db.js` — **Core file**: SQLite schema (inline `CREATE TABLE IF NOT EXISTS`), all migrations, and all heavy computation functions (XIRR, asset valuation, net worth history, yearly summary). If you're touching financial logic, it lives here.
-- `server/priceFetchers.js` — Alpha Vantage (quotes, monthly series), Meesman (price-history xlsx from meesman.nl, read with adm-zip), Brand New Day (JSON API), CBS CPI
+- `server/priceFetchers.js` — Alpha Vantage (quotes, monthly series), Meesman (price-history xlsx from meesman.nl, read with adm-zip), Brand New Day (JSON API), ABN AMRO (fund screener, see External data), CBS CPI
 - `server/scheduler.js` — daily job (`PRICE_FETCH_CRON`): price refresh, CPI sync, benchmark sync
 - `server/routes/` — one file per resource; thin wrappers that call `db.js` functions
 
@@ -94,6 +94,7 @@ The duplicate check counts occurrences per request: two identical rows in one fi
 
 - **CPI**: CBS open data table `86141NED` (2025=100, monthly from 2009-12). The total category key is `'T001112  '` (two trailing spaces).
 - **MSCI World benchmark**: Alpha Vantage `TIME_SERIES_MONTHLY` of `IWDA.AMS` (EUR, accumulating). Free tier allows 1 request per second and 25 per day.
+- **NT funds (ABN AMRO)**: price source `abn_amro`, ticker = ISIN. Undocumented public endpoints of `fondsen.abnamro.nl/fundscreener`, so they can break without notice. The fund page (HTML) has only the latest price. `charts/quotes?fundId=` has ~3 years of daily data, but as a total-return index, not a price. `abnPriceHistory` rebuilds euro prices from it, walking back from the latest price and stepping at each dividend (per unit = gross amount / units held). The step sits on the booking date because the ex-date is unknown, so prices between ex-date and booking run one dividend high; a reinvestment priced in that gap shows the difference. Every refresh rebuilds this history and overwrites prices from TAB imports, which carry the booking date instead of the price date.
 
 ## Environment variables
 

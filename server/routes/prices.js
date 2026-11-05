@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db');
-const { fetchAlphaVantagePrice, fetchMeesmanHistory, fetchBrandNewDayPrice } = require('../priceFetchers');
+const { fetchAlphaVantagePrice, fetchMeesmanHistory, fetchBrandNewDayPrice, fetchAbnAmroFund, fetchAbnAmroIndex, abnPriceHistory } = require('../priceFetchers');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ async function fetchForAsset(asset) {
   if (price_source === 'alpha_vantage') return fetchAlphaVantagePrice(ticker);
   if (price_source === 'meesman')       return (await fetchMeesmanHistory(ticker)).at(-1); // page scrape broke; history has the same latest price
   if (price_source === 'brand_new_day') return fetchBrandNewDayPrice(ticker);
+  if (price_source === 'abn_amro')      return fetchAbnAmroFund(ticker);
   throw new Error(`No price_source set`);
 }
 
@@ -24,6 +25,39 @@ async function fetchForAsset(asset) {
 async function backfillMeesmanHistory(asset) {
   if (asset.price_source !== 'meesman') return;
   for (const { date, price } of await fetchMeesmanHistory(asset.ticker)) upsertPrice(asset.id, date, price);
+}
+
+// ABN AMRO publishes a dividend-adjusted index, not past prices: rebuild them from the
+// asset's first buy on. Runs on every refresh, so a dividend imported later corrects them.
+async function backfillAbnHistory(asset, latest) {
+  if (asset.price_source !== 'abn_amro') return;
+  const { first } = db.prepare(`SELECT MIN(date) AS first FROM transactions WHERE asset_id = ? AND type = 'buy'`).get(asset.id);
+  if (!first) return;
+
+  // Gross dividend per unit held before the booking date (reinvested units come later)
+  const dividends = db.prepare(`
+    SELECT d.date, d.amount / (
+      SELECT SUM(CASE WHEN t.type = 'buy' THEN t.quantity ELSE -t.quantity END)
+      FROM transactions t
+      WHERE t.asset_id = d.asset_id AND t.type IN ('buy', 'sell') AND t.date < d.date
+    ) AS perUnit
+    FROM transactions d
+    WHERE d.asset_id = ? AND d.type = 'dividend'
+  `).all(asset.id).filter(d => d.perUnit > 0);
+
+  const prices = abnPriceHistory(await fetchAbnAmroIndex(latest.fundId), latest, dividends);
+  db.transaction(() => {
+    for (const { date, price } of prices) if (date >= first) upsertPrice(asset.id, date, price);
+  })();
+}
+
+// Stores the latest price and, where the source has one, the history behind it
+async function refreshAsset(asset) {
+  await backfillMeesmanHistory(asset);
+  const latest = await fetchForAsset(asset);
+  upsertPrice(asset.id, latest.date, latest.price);
+  await backfillAbnHistory(asset, latest);
+  return { date: latest.date, price: latest.price };
 }
 
 // ── BND funds list (cached in-process) ───────────────────────────────────────
@@ -59,9 +93,7 @@ async function runPriceRefresh() {
 
   for (const asset of assets) {
     try {
-      await backfillMeesmanHistory(asset);
-      const { price, date } = await fetchForAsset(asset);
-      upsertPrice(asset.id, date, price);
+      await refreshAsset(asset);
       fetched++;
     } catch (err) {
       errors.push({ assetId: asset.id, ticker: asset.ticker, source: asset.price_source, message: err.message });
@@ -88,10 +120,7 @@ router.post('/refresh/:assetId', async (req, res) => {
   if (!asset.ticker) return res.status(400).json({ error: 'No ticker set on this asset' });
 
   try {
-    await backfillMeesmanHistory(asset);
-    const { price, date } = await fetchForAsset(asset);
-    upsertPrice(asset.id, date, price);
-    res.json({ date, price });
+    res.json(await refreshAsset(asset));
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

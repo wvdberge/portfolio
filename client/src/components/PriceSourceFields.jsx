@@ -8,17 +8,27 @@ const MEESMAN_FUNDS = {
   'rentefonds':                     'Rentefonds',
 };
 
+// Share classes matched to the prices ABN books in the TAB export. Other classes of the
+// same fund look alike but trade at another price.
+const ABN_AMRO_FUNDS = {
+  'NL0011225305': 'NT WLD SCR EQ IDX A (050403)',
+  'NL0011515424': 'NT EM MK SCR EQ IDX (095073)',
+  'NL0013552078': 'NT WLD SCAP LC EQ (095274)',
+  'NL0010948220': 'NT EUR SCR EQ IDX A (050395)',
+};
+
 const SOURCE_LABELS = {
   '':               'None',
   'alpha_vantage':  'Alpha Vantage',
   'meesman':        'Meesman',
   'brand_new_day':  'Brand New Day',
+  'abn_amro':       'ABN AMRO',
 };
 
 /**
  * Shared price-source + fund/ticker fields for asset modals.
  * Props:
- *   priceSource  string  current value of price_source ('', 'alpha_vantage', 'meesman', 'brand_new_day')
+ *   priceSource  string  current value of price_source ('', 'alpha_vantage', 'meesman', 'brand_new_day', 'abn_amro')
  *   ticker       string  current ticker/fund-slug/fund-id value
  *   assetId      number|null  set when editing an existing saved asset (enables Test Fetch)
  *   onChange     (priceSource, ticker) => void
@@ -99,6 +109,26 @@ export default function PriceSourceFields({ priceSource, ticker, assetId, onChan
               <option value="">— select fund —</option>
               {Object.entries(MEESMAN_FUNDS).map(([slug, name]) => (
                 <option key={slug} value={slug}>{name}</option>
+              ))}
+            </select>
+            {canTest && (
+              <button type="button" className="btn btn-sm" onClick={handleTest} disabled={testing} style={{ flexShrink: 0 }}>
+                {testing ? '…' : 'Test'}
+              </button>
+            )}
+          </div>
+          {testResult && <TestResultHint result={testResult} />}
+        </div>
+      )}
+
+      {priceSource === 'abn_amro' && (
+        <div className="form-row">
+          <label>ABN AMRO fund</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <select value={ticker} onChange={e => setTicker(e.target.value)}>
+              <option value="">— select fund —</option>
+              {Object.entries(ABN_AMRO_FUNDS).map(([isin, name]) => (
+                <option key={isin} value={isin}>{name}</option>
               ))}
             </select>
             {canTest && (

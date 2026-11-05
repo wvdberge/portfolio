@@ -131,7 +131,71 @@ async function fetchBrandNewDayPrice(fundId) {
   };
 }
 
+// ── ABN AMRO fund screener ────────────────────────────────────────────────────
+
+const ABN_BASE = 'https://fondsen.abnamro.nl/fundscreener/nl';
+const ABN_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; portfolio-tracker)' };
+
+// Latest price and date from the public fund page (HTML, no API). The fundId is what
+// the chart endpoint wants. A missing field means ABN changed the page or the ISIN is wrong.
+async function fetchAbnAmroFund(isin) {
+  const resp = await fetch(`${ABN_BASE}/fund/${encodeURIComponent(isin)}`, { headers: ABN_HEADERS });
+  if (!resp.ok) throw new Error(`ABN AMRO: HTTP ${resp.status} for "${isin}"`);
+  const html = await resp.text();
+  const price = html.match(/Koers\s*<\/div>\s*<\/div>\s*<div>\s*€\s*([\d.]+,\d+)/);
+  const date = html.match(/Koersdatum[\s\S]{0,200}?(\d{2})-(\d{2})-(\d{4})/);
+  const fundId = html.match(/charts\/quotes\?fundId=(\d+)/);
+  if (!price || !date || !fundId) throw new Error(`ABN AMRO: no price found on the page for "${isin}"`);
+  return {
+    price: parseFloat(price[1].replace(/\./g, '').replace(',', '.')),
+    date: `${date[3]}-${date[2]}-${date[1]}`,
+    fundId: fundId[1],
+  };
+}
+
+// Daily total-return index behind the fund page's chart: about 3 years, starts at 100,
+// dividends reinvested. Not a price; see abnPriceHistory. Oldest first.
+async function fetchAbnAmroIndex(fundId) {
+  const resp = await fetch(`${ABN_BASE}/charts/quotes?fundId=${encodeURIComponent(fundId)}`, { headers: ABN_HEADERS });
+  if (!resp.ok) throw new Error(`ABN AMRO index: HTTP ${resp.status} for fund ${fundId}`);
+  const rows = (await resp.json())?.quotes?.rows;
+  if (!rows || Object.keys(rows).length === 0) throw new Error(`ABN AMRO index: no data for fund ${fundId}`);
+  return Object.values(rows)
+    .map(r => ({ date: new Date(r.c[0].v * 1000).toISOString().slice(0, 10), value: r.c[1].v }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Euro prices from the index, walking back from the latest real price. Between dividends
+// price / index is constant. Across a dividend D per unit it was D / index higher before:
+// the index counts D as return, the price drops by it. The step falls on the dividend's
+// booking date, not the (unknown) ex-date: until then the value includes the dividend
+// receivable, and the step lines up with the cash flow in XIRR.
+// dividends: [{ date, perUnit }]. Weekends are skipped (the chart repeats Friday).
+function abnPriceHistory(index, latest, dividends) {
+  const anchor = index.find(i => i.date === latest.date);
+  if (!anchor) throw new Error(`ABN AMRO index: no value for ${latest.date}`);
+  const divs = dividends.filter(d => d.date <= latest.date).sort((a, b) => b.date.localeCompare(a.date));
+
+  let ratio = latest.price / anchor.value;
+  let next = 0;
+  let later = anchor; // index value of the day after the one being priced
+  const prices = [];
+  for (const i of index.filter(i => i.date < latest.date).reverse()) {
+    while (next < divs.length && i.date < divs[next].date) {
+      ratio += divs[next].perUnit / later.value;
+      next++;
+    }
+    later = i;
+    const day = new Date(`${i.date}T00:00:00Z`).getUTCDay();
+    if (day !== 0 && day !== 6) prices.push({ date: i.date, price: Math.round(i.value * ratio * 100) / 100 });
+  }
+  return prices.reverse();
+}
+
 module.exports = {
+  fetchAbnAmroFund,
+  fetchAbnAmroIndex,
+  abnPriceHistory,
   fetchAlphaVantagePrice,
   fetchAlphaVantageMonthly,
   fetchMeesmanHistory,

@@ -17,7 +17,7 @@ db.exec(`
     target_allocation_pct REAL,
     ticker               TEXT,
     archived             INTEGER NOT NULL DEFAULT 0,
-    price_source         TEXT CHECK(price_source IN ('alpha_vantage','meesman','brand_new_day')) DEFAULT NULL
+    price_source         TEXT CHECK(price_source IN ('alpha_vantage','meesman','brand_new_day','abn_amro')) DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS liabilities (
@@ -88,9 +88,41 @@ db.exec(`
 // ── Migrations ────────────────────────────────────────────────────────────────
 // price_source column (Phase 2b) — idempotent
 try {
-  db.exec(`ALTER TABLE assets ADD COLUMN price_source TEXT CHECK(price_source IN ('alpha_vantage','meesman','brand_new_day')) DEFAULT NULL`);
+  db.exec(`ALTER TABLE assets ADD COLUMN price_source TEXT CHECK(price_source IN ('alpha_vantage','meesman','brand_new_day','abn_amro')) DEFAULT NULL`);
 } catch (e) {
   if (!e.message.includes('duplicate column')) throw e;
+}
+
+// Add 'abn_amro' to the price_source CHECK. Other tables reference assets by name, and
+// renaming assets would rewrite those references, so build the new table first and
+// rename it into place. Column list is explicit: price_source was added by ALTER on old DBs.
+{
+  const assetSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='assets'").get();
+  if (assetSchema && !assetSchema.sql.includes("'abn_amro'")) {
+    const cols = 'id, name, type, currency, target_allocation_pct, ticker, archived, price_source';
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE _assets_new (
+          id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+          name                 TEXT NOT NULL,
+          type                 TEXT NOT NULL CHECK(type IN ('stock','etf','savings','real_estate','pension','crypto','other')),
+          currency             TEXT NOT NULL DEFAULT 'EUR',
+          target_allocation_pct REAL,
+          ticker               TEXT,
+          archived             INTEGER NOT NULL DEFAULT 0,
+          price_source         TEXT CHECK(price_source IN ('alpha_vantage','meesman','brand_new_day','abn_amro')) DEFAULT NULL
+        );
+        INSERT INTO _assets_new (${cols}) SELECT ${cols} FROM assets;
+        DROP TABLE assets;
+        ALTER TABLE _assets_new RENAME TO assets;
+        COMMIT;
+      `);
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
 }
 
 // Add 'fee' to transactions type CHECK — requires table recreation (SQLite limitation)

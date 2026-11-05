@@ -23,6 +23,7 @@
 4. Covers fund purchases, sales, reinvestments, dividends (booked gross: net + dividendbelasting), servicekosten and interest. Servicekosten use their own mapping key `servicekosten` (mapped to NT WLD SCR EQ IDX A).
 5. The account's value comes from the TAB, not from snapshots: SEPA transfers are deposits/withdrawals, and fund purchases, sales and servicekosten also get a cash leg on the account. The computed balance matches the TAB's own balance column, apart from a few days between a dividend and its reinvestment. Don't add snapshots to this account: a snapshot switches it back to snapshot valuation and makes interest count as paid out.
 6. Export from 2025-01-01 onward. ABN history starts with an opening purchase per fund on 2024-12-29; earlier rows would double it.
+7. Daily fund prices: set the price source on each fund asset to ABN AMRO and pick the fund (ISINs: 050403 → NL0011225305, 095073 → NL0011515424, 095274 → NL0013552078, 050395 → NL0010948220). Price refresh stores the latest price and rebuilds past prices from ABN's fund screener. Don't add snapshots to these assets.
 
 ### Raisin (PDF account statements)
 1. Per account (spaarrekening or deposito): download the account statement PDF, **from the account's start date** to today
