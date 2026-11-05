@@ -78,6 +78,10 @@ Implemented from scratch in `db.js` (Newton-Raphson + bisection fallback; result
 
 Dashboard weights and targets (`target_allocation_pct`) are shares of investments excluding `real_estate`.
 
+### Asset page
+
+Clicking an asset on the dashboard or the Assets list opens `/assets/:id`; its Overview tab reads `GET /api/assets/:id/overview` (`getAssetOverview`). Its net cash in holds the same flows as XIRR, so End = Start + Net cash in + Gain and a reinvested dividend nets to zero. The Yearly page's growth uses buys and deposits minus sales and withdrawals instead, so the two can differ for assets with dividends or a first snapshot as contribution.
+
 ### Import parsers (`server/routes/import.js`)
 
 | Format | Key | Notes |

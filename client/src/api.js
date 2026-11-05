@@ -25,6 +25,7 @@ export const api = {
     archive: (id) => req('DELETE', `/api/assets/${id}`),
     xirrSummary: () => req('GET', '/api/assets/xirr-summary'),
     xirr: (id, period = 'all') => req('GET', `/api/assets/${id}/xirr?period=${period}`),
+    overview: (id) => req('GET', `/api/assets/${id}/overview`),
   },
 
   transactions: {

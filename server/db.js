@@ -511,6 +511,137 @@ function getAssetXirr(assetId, period = 'all') {
   return xirr(cfs);
 }
 
+// ── Asset overview ────────────────────────────────────────────────────────────
+
+// One asset over one window; fromStr null means since the first cash flow.
+// Net cash in holds the same flows as XIRR, so End = Start + Net cash in + Gain and
+// gain and XIRR agree in sign: a reinvested dividend (dividend + buy) nets to zero.
+function assetPeriodReturn(assetId, fromStr, toStr) {
+  const flows = buildCashflows([assetId], fromStr, toStr);
+  const netCashIn = -flows.reduce((sum, cf) => sum + cf.amount, 0);
+  const unvalued = (fromStr && isUnvalued(assetId, fromStr)) || isUnvalued(assetId, toStr);
+  const start = (fromStr && getAssetValueAtDate(assetId, fromStr)) || 0;
+  const end = getAssetValueAtDate(assetId, toStr) ?? 0;
+  if (unvalued) {
+    return { start: null, net_cash_in: netCashIn, gain: null, end: null, xirr: null, has_activity: true };
+  }
+
+  const cfs = [...flows];
+  if (start > 0) cfs.push({ date: parseDate(fromStr), amount: -start });
+  cfs.push({ date: parseDate(toStr), amount: end });
+  cfs.sort((a, b) => a.date - b.date);
+
+  // A value with no cash flow behind it (archived snapshot-only asset): the gain is unknown
+  const noBasis = start === 0 && end > 0 && flows.length === 0;
+  return {
+    start,
+    net_cash_in: netCashIn,
+    gain: noBasis ? null : Math.round((end - start - netCashIn) * 100) / 100 + 0, // + 0: no "-0,00"
+    end,
+    xirr: xirr(cfs),
+    has_activity: start > 0 || end > 0 || flows.length > 0,
+  };
+}
+
+function getAssetOverview(assetId) {
+  const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId);
+  if (!asset) return null;
+
+  const today = todayStr();
+  const first = db.prepare(`
+    SELECT MIN(date) AS d FROM (
+      SELECT date FROM transactions WHERE asset_id = @id
+      UNION ALL SELECT date FROM snapshots WHERE asset_id = @id
+    )
+  `).get({ id: assetId }).d;
+
+  const totals = db.prepare(`
+    SELECT
+      COUNT(*) AS transactions,
+      COALESCE(SUM(CASE WHEN type = 'dividend' THEN amount ELSE 0 END), 0) AS dividends,
+      COALESCE(SUM(CASE WHEN type = 'interest' THEN amount ELSE 0 END), 0) AS interest,
+      COALESCE(SUM(CASE WHEN type = 'fee'      THEN amount ELSE 0 END), 0) AS fees,
+      MAX(date) AS last_transaction
+    FROM transactions WHERE asset_id = ?
+  `).get(assetId);
+
+  const latestSnapshot = db.prepare('SELECT date FROM snapshots WHERE asset_id = ? ORDER BY date DESC LIMIT 1').get(assetId);
+  const latestPrice = db.prepare('SELECT date, price FROM asset_prices WHERE asset_id = ? ORDER BY date DESC LIMIT 1').get(assetId);
+  const priced = ['stock', 'etf', 'crypto'].includes(asset.type) || (asset.type === 'pension' && !!asset.price_source);
+  const valueDate = isSnapshotOnly(asset) ? latestSnapshot?.date
+    : priced ? [latestPrice?.date, latestSnapshot?.date].filter(Boolean).sort().pop()
+    : latestSnapshot?.date ?? totals.last_transaction;
+
+  // Same weight as the dashboard: share of investments, house left out
+  const value = getAssetCurrentValue(assetId);
+  const investments = activeAssets(['real_estate']).reduce((sum, a) => sum + (getAssetCurrentValue(a.id) ?? 0), 0);
+  const weight = asset.type !== 'real_estate' && !asset.archived && value != null && investments > 0
+    ? (value / investments) * 100
+    : null;
+
+  const periods = [{ period: 'all', label: 'Since start', ...assetPeriodReturn(assetId, null, today) }];
+  for (const years of [1, 3]) {
+    const d = new Date(); d.setFullYear(d.getFullYear() - years);
+    const from = d.toISOString().slice(0, 10);
+    // Held for the whole window only: otherwise the row would repeat "Since start"
+    if (first && first <= from) {
+      periods.push({ period: `${years}y`, label: `Last ${years} year${years > 1 ? 's' : ''}`, ...assetPeriodReturn(assetId, from, today) });
+    }
+  }
+
+  const yearRows = [];
+  if (first) {
+    for (let y = new Date().getFullYear(); y >= parseDate(first).getFullYear(); y--) {
+      const yearEnd = `${y}-12-31`;
+      const row = assetPeriodReturn(assetId, `${y - 1}-12-31`, yearEnd > today ? today : yearEnd);
+      if (row.has_activity) yearRows.push({ period: String(y), label: String(y), ...row });
+    }
+  }
+
+  // Value and net cash in at the first date, each month end, and today
+  const history = [];
+  if (first) {
+    const dates = [first];
+    const start = parseDate(first);
+    for (let y = start.getFullYear(), m = start.getMonth(); ; m === 11 ? (y++, m = 0) : m++) {
+      const day = new Date(y, m + 1, 0).getDate(); // last day of month m
+      const monthEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (monthEnd >= today) break;
+      if (monthEnd > first) dates.push(monthEnd);
+    }
+    if (today > first) dates.push(today);
+
+    const flows = buildCashflows([assetId], null, today);
+    for (const date of dates) {
+      const v = getAssetValueAtDate(assetId, date);
+      if (v === null) continue; // unvalued is not 0
+      const until = parseDate(date);
+      history.push({
+        date,
+        value: v,
+        net_cash_in: -flows.filter(cf => cf.date <= until).reduce((sum, cf) => sum + cf.amount, 0),
+      });
+    }
+  }
+
+  const strip = ({ has_activity, ...row }) => row;
+  return {
+    current_value: value,
+    value_date: valueDate ?? null,
+    first_date: first ?? null,
+    weight_pct: weight,
+    transactions: totals.transactions,
+    dividends: totals.dividends,
+    interest: totals.interest,
+    fees: totals.fees,
+    units: priced ? getNetHoldings(assetId) : null,
+    latest_price: priced ? latestPrice?.price ?? null : null,
+    periods: periods.map(strip),
+    years: yearRows.map(strip),
+    history,
+  };
+}
+
 // Archived assets included: their past cash flows still belong to the return
 function assetIdsForXirr(excludeTypes = []) {
   return db.prepare('SELECT id, type FROM assets').all().filter(a => !excludeTypes.includes(a.type)).map(a => a.id);
@@ -845,6 +976,7 @@ module.exports = {
   getNetWorthAtDate,
   xirr,
   getAssetXirr,
+  getAssetOverview,
   getPortfolioXirr,
   getBenchmarkReturn,
   getRealReturn,

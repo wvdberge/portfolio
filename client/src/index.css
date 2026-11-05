@@ -262,3 +262,9 @@ label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom
   .net-worth-value { font-size: 28px; }
   .stat-box { min-width: 120px; }
 }
+
+/* Asset overview */
+.fact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 20px; margin: 16px 0 8px; }
+.fact-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+.fact-value { font-size: 13px; font-variant-numeric: tabular-nums; }
+.overview-heading { font-size: 13px; font-weight: 600; margin: 20px 0 10px; }

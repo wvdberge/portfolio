@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, getAssetCurrentValue, getAssetXirr } = require('../db');
+const { db, getAssetCurrentValue, getAssetXirr, getAssetOverview } = require('../db');
 
 // GET /api/assets
 router.get('/', (req, res) => {
@@ -52,6 +52,13 @@ router.get('/:id/xirr', (req, res) => {
   const asset = db.prepare('SELECT id FROM assets WHERE id = ?').get(req.params.id);
   if (!asset) return res.status(404).json({ error: 'Not found' });
   res.json({ xirr: getAssetXirr(asset.id, period) });
+});
+
+// GET /api/assets/:id/overview  — returns table, descriptives and value history
+router.get('/:id/overview', (req, res) => {
+  const overview = getAssetOverview(req.params.id);
+  if (!overview) return res.status(404).json({ error: 'Not found' });
+  res.json(overview);
 });
 
 // GET /api/assets/:id

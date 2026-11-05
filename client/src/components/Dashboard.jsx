@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -200,6 +201,7 @@ function ContributionsChart({ data }) {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null);
   const [cvg, setCvg] = useState(null);
@@ -316,7 +318,8 @@ export default function Dashboard() {
                   const driftAbs = a.drift_pp !== null ? Math.abs(a.drift_pp) : null;
                   const driftWarn = driftAbs !== null && driftAbs > 5;
                   return (
-                    <tr key={a.id}>
+                    <tr key={a.id} className="clickable-row"
+                      onClick={() => navigate(`/assets/${a.id}`, { state: { from: 'dashboard' } })}>
                       <td>{a.name}</td>
                       <td><span className="type-badge">{a.type}</span></td>
                       <td className="num">{a.current_value !== null ? fmtEur(a.current_value) : '—'}</td>

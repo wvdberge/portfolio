@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { fmtEur, fmtDate, fmtShares, fmtNum, today } from '../format.js';
 import PriceSourceFields from './PriceSourceFields.jsx';
+import AssetOverview from './AssetOverview.jsx';
 
 const ASSET_TYPES = ['stock', 'etf', 'savings', 'real_estate', 'pension', 'crypto', 'other'];
 const LIQUID_TYPES = ['stock', 'etf', 'crypto'];
@@ -510,9 +511,10 @@ function SnapshotsTab({ asset }) {
 // ── Asset Detail ─────────────────────────────────────────────────────────────
 export default function AssetDetail() {
   const { id } = useParams();
+  const fromDashboard = useLocation().state?.from === 'dashboard';
   const [asset, setAsset] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('transactions');
+  const [tab, setTab] = useState('overview');
   const [editModal, setEditModal] = useState(false);
 
   function loadAsset() {
@@ -533,7 +535,9 @@ export default function AssetDetail() {
 
   return (
     <div>
-      <Link to="/assets" className="detail-back">← Assets</Link>
+      {fromDashboard
+        ? <Link to="/" className="detail-back">← Dashboard</Link>
+        : <Link to="/assets" className="detail-back">← Assets</Link>}
 
       <div className="detail-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
@@ -556,6 +560,8 @@ export default function AssetDetail() {
       </div>
 
       <div className="tabs">
+        <button className={'tab-btn' + (tab === 'overview' ? ' active' : '')}
+          onClick={() => setTab('overview')}>Overview</button>
         <button className={'tab-btn' + (tab === 'transactions' ? ' active' : '')}
           onClick={() => setTab('transactions')}>Transactions</button>
         {showPricesTab && (
@@ -567,6 +573,7 @@ export default function AssetDetail() {
       </div>
 
       <div className="section">
+        {tab === 'overview' && <AssetOverview asset={asset} />}
         {tab === 'transactions' && <TransactionsTab asset={asset} />}
         {tab === 'prices' && showPricesTab && <PricesTab asset={asset} />}
         {tab === 'snapshots' && <SnapshotsTab asset={asset} />}
